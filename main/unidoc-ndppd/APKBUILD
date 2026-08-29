@@ -20,9 +20,10 @@ build() {
 	make VERSION="v$pkgver"
 }
 
-check() {
-	./bin/unidoc-ndppd -h >/dev/null
-}
+# No check() - unidoc-ndppd has no -h/--help or any other no-op flag
+# (getopt string is literally "c:dp:u:v", confirmed against src/ndppd.c) to
+# smoke-test against without a real config file and network privileges,
+# so there's nothing meaningful to run here at build time.
 
 package() {
 	make DESTDIR="$pkgdir" PREFIX=/usr install

@@ -76,6 +76,14 @@ jobs:
                 -pubout -out /home/builder/.abuild/unidoc-aports.rsa.pub
               echo "PACKAGER_PRIVKEY=/home/builder/.abuild/unidoc-aports.rsa" \
                 > /home/builder/.abuild/abuild.conf
+              # apk index (which abuild runs after every package build)
+              # verifies each .apk it indexes against the system trust
+              # store - without this, it rejects our own just-built,
+              # just-self-signed packages with "UNTRUSTED signature" before
+              # the index can even be created. abuild-keygen -i does this
+              # automatically for a freshly-generated local key; nothing
+              # does it for a key written straight from a secret like this.
+              cp /home/builder/.abuild/unidoc-aports.rsa.pub /etc/apk/keys/
               chown -R builder:builder /home/builder /work
 
               cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
