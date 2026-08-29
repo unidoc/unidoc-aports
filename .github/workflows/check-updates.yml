@@ -5,6 +5,13 @@ name: Check for updates
 # job in build-and-publish.yml runs on the PR too (see that file's
 # `pull_request:` trigger), so by the time there's something to approve,
 # it's already been proven to actually build.
+#
+# Two independent things get checked: each package's own upstream release
+# (the `check` job below), and separately, the Alpine version this repo's
+# own CI builds everything against (`check-alpine`). No reason to lag
+# behind Alpine's own latest stable - Alpine itself has no LTS concept to
+# deliberately stay behind on, so tracking latest is the actual default,
+# not a corner someone's cutting.
 on:
   schedule:
     - cron: "0 6 * * *" # once a day, 06:00 UTC
@@ -92,5 +99,52 @@ jobs:
           fi
 
           gh pr create --title "$PKG: bump to $latest" --body "$body" \
+            --head "$branch" --base master \
+            || echo "PR already open for $branch, or nothing to do"
+
+  check-alpine:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the Alpine builder version against Alpine's own latest-stable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          workflow=".github/workflows/build-and-publish.yml"
+          current="$(sed -n 's/.*alpine:\([0-9.]*\) sh -c.*/\1/p' "$workflow")"
+
+          # latest-stable is Alpine's own self-maintained pointer to
+          # whichever branch is current - the same authoritative source
+          # https://dl-cdn.alpinelinux.org/alpine/ itself resolves against,
+          # not a guess based on Docker Hub tag sort order.
+          latest="$(curl -fsSL \
+            https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml \
+            | sed -n 's/^  branch: v//p' | head -1)"
+
+          if [ "$current" = "$latest" ]; then
+            echo "Alpine builder: up to date ($current)"
+            exit 0
+          fi
+          echo "Alpine builder: $current -> $latest"
+
+          sed -i "s/alpine:$current sh -c/alpine:$latest sh -c/" "$workflow"
+
+          branch="bump-alpine-$latest"
+          git config user.name "unidoc-aports-bot"
+          git config user.email "actions@github.com"
+          git checkout -b "$branch"
+          git add "$workflow"
+          git commit -m "ci: bump Alpine builder to $latest"
+          git push -u origin "$branch" --force
+
+          body="Alpine's own latest-stable branch is now v$latest (this repo's CI builder was pinned to $current). This rebuilds every package against the new release."
+          body="$(printf '%s\n\n`unidoc-incus` is the one with real exposure here - it dynamically links against dbus/lxc/sqlite/cowsql/qemu and friends, so an Alpine version bump is a real ABI boundary for it, not just a version number. The static packages (unidoc-ndppd, isms, unisupply, unipdf-cli) do not care which Alpine built them. Read unidoc-incus'"'"'s build log specifically before merging, same as any other bump.' "$body")"
+
+          gh pr create --title "ci: bump Alpine builder to $latest" --body "$body" \
             --head "$branch" --base master \
             || echo "PR already open for $branch, or nothing to do"
