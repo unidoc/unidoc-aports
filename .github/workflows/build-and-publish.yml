@@ -73,7 +73,7 @@ jobs:
               cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
 
               # REPODEST nests under main/ so the published tree mirrors
-              # Alpine's own dl-cdn layout (.../v3.20/main/x86_64/...) -
+              # the real Alpine dl-cdn layout (.../v3.20/main/x86_64/...) -
               # channel segment first, then arch. One channel for now; a
               # second (e.g. testing) would just be another top-level dir
               # here and another REPODEST.
