@@ -120,10 +120,27 @@ jobs:
               fi
             '
 
+      # Every build here targets one specific Alpine release's libraries
+      # (dbus/lxc/sqlite/cowsql/etc for unidoc-incus especially - the static
+      # packages don't care, but this repo doesn't publish two trees). The
+      # published path has to carry that version, or a client still on an
+      # older Alpine could `apk upgrade` into a package linked against
+      # newer libraries it doesn't have - not hypothetical, that's exactly
+      # what apk's own dependency resolution would do since `depends=`
+      # constraints are version-range checks, not an Alpine-release check.
+      # Same extraction check-updates.yml's check-alpine job uses, so
+      # there's one place that knows what "alpine:3.24" in this file means.
+      - name: Tag this build with the Alpine version it was built against
+        run: |
+          ALPINE_VER="$(sed -n 's/.*alpine:\([0-9.]*\) sh -c.*/\1/p' .github/workflows/build-and-publish.yml)"
+          mkdir -p "repo/v$ALPINE_VER"
+          mv repo/main "repo/v$ALPINE_VER/main"
+          echo "ALPINE_VER=$ALPINE_VER" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         with:
           name: repo-${{ matrix.arch }}
-          path: repo/main/${{ matrix.arch }}
+          path: repo/v${{ env.ALPINE_VER }}/main/${{ matrix.arch }}
           if-no-files-found: error
 
       # Only one leg needs to publish the key - it's arch-independent.
@@ -151,6 +168,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine the Alpine version this build targeted
+        run: |
+          echo "ALPINE_VER=$(sed -n 's/.*alpine:\([0-9.]*\) sh -c.*/\1/p' .github/workflows/build-and-publish.yml)" >> "$GITHUB_ENV"
+
       - uses: actions/download-artifact@v4
         with:
           path: site
@@ -163,20 +186,23 @@ jobs:
           path: site/pubkey
 
       # download-artifact lands each arch's files under site/repo-<arch>/ -
-      # apk expects <repo-root>/main/<arch>/... (repo URL = https://pkg.unidoc.io/main),
-      # so flatten one level into that shape. The pubkey goes to keys/, the
-      # URL the README's install instructions already point at. CNAME pins
-      # the custom domain - required every deploy, GitHub Actions-based
-      # Pages publishes don't persist it on their own the way the old
+      # apk expects <repo-root>/v$ALPINE_VER/main/<arch>/... (repo URL =
+      # https://pkg.unidoc.io/v$ALPINE_VER/main), so flatten one level into
+      # that shape, nested under the Alpine version (see the build job's
+      # "Tag this build..." step for why the version has to be in the
+      # path). The pubkey is NOT version-nested - one key signs every
+      # Alpine-version tree, same as it signs every package. CNAME pins the
+      # custom domain - required every deploy, GitHub Actions-based Pages
+      # publishes don't persist it on their own the way the old
       # branch-based flow did; the Settings > Pages > Custom domain field
       # still needs to be set once too (see README).
       - name: Arrange repo tree for apk
         run: |
-          mkdir -p out/main out/keys
+          mkdir -p "out/v$ALPINE_VER/main" out/keys
           for d in site/repo-*; do
             arch="$(basename "$d" | sed 's/^repo-//')"
-            mkdir -p "out/main/$arch"
-            cp -r "$d"/* "out/main/$arch/"
+            mkdir -p "out/v$ALPINE_VER/main/$arch"
+            cp -r "$d"/* "out/v$ALPINE_VER/main/$arch/"
           done
           cp site/pubkey/unidoc-aports.rsa.pub out/keys/
           echo "pkg.unidoc.io" > out/CNAME

@@ -10,13 +10,35 @@ run.
 # trust our signing key
 wget -P /etc/apk/keys/ https://pkg.unidoc.io/keys/unidoc-aports.rsa.pub
 
-# add the repo - "main" is the channel (see "Layout" below), same idea as
-# Alpine's own main/community/testing split, just with one channel so far
-echo "https://pkg.unidoc.io/main" >> /etc/apk/repositories
+# add the repo - the URL is version-qualified on purpose (see below), this
+# resolves it to whatever Alpine version this machine is actually running
+echo "https://pkg.unidoc.io/v$(cut -d. -f1,2 /etc/alpine-release)/main" \
+  >> /etc/apk/repositories
 apk update
 
 apk add unidoc-incus unidoc-ndppd isms unisupply unipdf-cli
 ```
+
+**Supported Alpine version: always current stable, nothing else.** This
+repo's CI builds every package against whatever Alpine's own
+[`latest-stable`](https://dl-cdn.alpinelinux.org/alpine/latest-stable/)
+branch is - checked daily, bumped automatically (see "Release cadence"
+below). There's no older-release track and no intent to add one: Alpine
+itself has no LTS branch to deliberately lag behind on, so tracking
+anything other than current stable would be a deliberate downgrade for no
+reason.
+
+The install path is version-qualified (`.../v3.24/main`, matching Alpine's
+own `dl-cdn.../v3.24/main` shape) rather than one floating `.../main` for
+everyone - this matters specifically for `unidoc-incus`, which dynamically
+links against dbus/lxc/sqlite/cowsql/etc. If you're still on Alpine 3.24
+when this repo has already moved on to building against 3.25, your
+`.../v3.24/main` path simply stops getting updated and eventually 404s -
+`apk update` warns about the unreachable repo and leaves whatever you
+already have installed alone. That's the deliberate failure mode: no
+silent "upgrade" to a package linked against libraries your system
+doesn't have. Upgrade Alpine, and the URL above resolves to the current
+path automatically.
 
 ## What's in here, and why it looks like this
 
@@ -79,14 +101,16 @@ Built by GitHub Actions on every push to `master` that touches `main/**`,
 published to **GitHub Pages** (`actions/upload-pages-artifact` +
 `actions/deploy-pages` - first-party actions, no third-party dependency).
 Signing key lives in the `ABUILD_PRIVATE_KEY` repository secret; it's never
-in this repo. Two things worth knowing:
+in this repo. Worth knowing:
 
-- **No version history.** Each publish replaces the whole Pages site - only
-  the latest build of each package is ever served. This isn't a size
-  workaround so much as the actual design: nobody's pinning old package
-  versions from this repo. If that ever needs to change, the fallback is
-  one GitHub Release per arch instead of Pages (unlimited storage, less
-  clean URLs) - not needed yet.
+- **No version history within an Alpine release.** Each publish replaces
+  the whole Pages site - only the latest build of each package is ever
+  served for the Alpine version being built right now. Nobody's pinning
+  old *package* versions from this repo. Old *Alpine-version* paths
+  (`.../v3.24/main` after this repo has moved to building against 3.25)
+  aren't actively archived either - they just stop being written to, and
+  fall out of the published site on the next deploy. See "Supported Alpine
+  version" above for why that's a safe failure mode, not an accident.
 - **Signing only runs on pushes to `master`**, never on a fork's pull
   request - a malicious PR against a public repo can't get anywhere near
   the private key.
@@ -170,11 +194,20 @@ way, each with its own `REPODEST` in CI.
 ```
 main/<pkgname>/APKBUILD     - one directory per package, standard Alpine layout
 .github/workflows/          - CI: build (per-arch, in a throwaway Alpine
-                               container) -> publish (GitHub Pages, under /main)
+                               container) -> publish (GitHub Pages, under
+                               /v$ALPINE_VER/main - see "Supported Alpine
+                               version" above)
 scripts/keygen.sh           - abuild signing key setup (run locally, not in CI)
 ```
+
+Note the source tree here has one `main/`, not one per Alpine version -
+an APKBUILD is just a recipe, it isn't tied to a specific Alpine release
+the way a *built* `.apk` is. The Alpine-version split only exists in the
+published output (`pkg.unidoc.io/v3.24/main/...`), assembled by CI from
+whatever Alpine version it happens to be building against that run.
 
 There's no `keys/` directory in this repo - the public key isn't committed
 here at all. CI derives it from the `ABUILD_PRIVATE_KEY` secret on every
 run and publishes it to the live site at `https://pkg.unidoc.io/keys/unidoc-aports.rsa.pub`
-(see "Hosting" above for why).
+(see "Hosting" above for why) - un-versioned, since one key signs every
+Alpine-version tree.
