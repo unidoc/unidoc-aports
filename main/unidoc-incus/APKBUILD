@@ -111,6 +111,12 @@ _tools="fuidshift
 
 export GOFLAGS="$GOFLAGS -tags=libsqlite3"
 export GOPATH="$srcdir"
+# Alpine's go package defaults GOTOOLCHAIN=local (most distros do, so a
+# build never silently fetches and runs a different Go version) - that
+# blocks incus 7.4.0's go.mod (requires go>=1.26.7, Alpine 3.24 packages
+# 1.26.3) outright instead of the network-fetch fallback assumed above.
+# options="net" makes the fetch itself permitted; this makes it happen.
+export GOTOOLCHAIN=auto
 
 prepare() {
 	default_prepare
