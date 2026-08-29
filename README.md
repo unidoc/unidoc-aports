@@ -60,10 +60,18 @@ and nobody could tell whose incus they're actually running. Instead:
 
 ### Release cadence
 
-Bumping `unidoc-incus` to a new stable tag is a manual `pkgver` edit for
-now - there's no cron job watching upstream releases yet. That's a
-deliberate v1 scope cut, not an oversight; a version-check workflow can be
-added once the manual flow has been exercised a few times.
+Semi-automatic, not hands-off. `check-updates.yml` runs daily, checks each
+package's upstream `/releases/latest` against its own `pkgver`, and - if
+there's a newer one - opens a PR with `pkgver` and the tarball checksum
+already bumped. `build-and-publish.yml`'s `build` job also runs on that PR
+(never the `publish`/signing job - that only ever runs on a push to
+`master`), so by the time there's something to look at, it's already
+proven to build. Nothing merges itself; approving is a deliberate choice,
+and a broken bump can just be closed. `unidoc-incus` gets an extra warning
+in its PR body every time, since a version bump there has already broken
+things this repo doesn't re-verify automatically (the static-build patch,
+the `_tools` list, the `check()` skip list) - green CI on that package
+specifically is not the same as "safe to merge without reading the log."
 
 ## Hosting
 

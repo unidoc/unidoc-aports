@@ -1,8 +1,9 @@
 name: Build and publish
 
-# Manual bump-and-push model for now (see README "release cadence") - this
-# just builds whatever's currently in main/ and republishes. No cron/
-# auto-bump yet.
+# Runs the build on both a push to master (which also publishes) and on
+# any PR touching main/** (check-updates.yml opens these) - the publish
+# job is explicitly skipped for pull_request events (see its `if:` below)
+# so a PR can prove it builds without ever being able to sign or deploy.
 #
 # One-time manual prerequisite this file can't do for you: Settings ->
 # Pages -> Build and deployment -> Source must be set to "GitHub Actions"
@@ -13,6 +14,9 @@ on:
     paths:
       - "main/**"
       - ".github/workflows/build-and-publish.yml"
+  pull_request:
+    paths:
+      - "main/**"
   workflow_dispatch: {}
 
 jobs:
@@ -136,6 +140,9 @@ jobs:
 
   publish:
     needs: build
+    # Never on a PR - a PR only ever proves the build job goes green, it
+    # never gets anywhere near signing or the live site.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pages: write

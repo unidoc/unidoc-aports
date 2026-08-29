@@ -1,0 +1,96 @@
+name: Check for updates
+
+# Semi-automatic: finds a newer upstream release and opens a PR with pkgver
+# + sha512sums already bumped - it never merges anything itself. The build
+# job in build-and-publish.yml runs on the PR too (see that file's
+# `pull_request:` trigger), so by the time there's something to approve,
+# it's already been proven to actually build.
+on:
+  schedule:
+    - cron: "0 6 * * *" # once a day, 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `repo` is where releases are checked. `archive` is the base
+          # name used in that package's own `source=` tarball entry - for
+          # everything except unidoc-incus this is identical to pkgname,
+          # but unidoc-incus's source is `incus-$pkgver.tar.gz` (the
+          # upstream project's own name, not ours), so it needs calling
+          # out explicitly rather than assumed.
+          - pkg: unidoc-incus
+            repo: lxc/incus
+            archive: incus
+          - pkg: unidoc-ndppd
+            repo: unidoc/unidoc-ndppd
+            archive: unidoc-ndppd
+          - pkg: isms
+            repo: unidoc/isms
+            archive: isms
+          - pkg: unisupply
+            repo: unidoc/unisupply
+            archive: unisupply
+          - pkg: unipdf-cli
+            repo: unidoc/unipdf-cli
+            archive: unipdf-cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check ${{ matrix.pkg }} against ${{ matrix.repo }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG: ${{ matrix.pkg }}
+          REPO: ${{ matrix.repo }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -e
+          apkbuild="main/$PKG/APKBUILD"
+          current="$(sed -n 's/^pkgver=//p' "$apkbuild")"
+
+          # /releases/latest (not /tags) on purpose - it's GitHub's own
+          # "which release is current" answer (excludes drafts/prereleases
+          # by definition), not a raw tag list whose ordering isn't
+          # guaranteed to be version-sorted.
+          latest="$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' | sed 's/^v//')"
+
+          if [ "$current" = "$latest" ]; then
+            echo "$PKG: up to date ($current)"
+            exit 0
+          fi
+          echo "$PKG: $current -> $latest"
+
+          tarball="$ARCHIVE-$latest.tar.gz"
+          curl -fsSL -o "$tarball" \
+            "https://github.com/$REPO/archive/refs/tags/v$latest.tar.gz"
+          sum="$(sha512sum "$tarball" | cut -d' ' -f1)"
+
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=$latest/" \
+            -e "s/^pkgrel=.*/pkgrel=0/" \
+            -e "s#^[0-9a-f]\{128\}  $ARCHIVE-[0-9.]*\.tar\.gz#$sum  $tarball#" \
+            "$apkbuild"
+
+          branch="bump-$PKG-$latest"
+          git config user.name "unidoc-aports-bot"
+          git config user.email "actions@github.com"
+          git checkout -b "$branch"
+          git add "$apkbuild"
+          git commit -m "$PKG: bump to $latest"
+          git push -u origin "$branch" --force
+
+          body="Automated version check: $REPO released v$latest (currently $current in this repo). pkgver and the tarball checksum are already bumped - CI will build this on the PR before it's safe to merge."
+          if [ "$PKG" = "unidoc-incus" ]; then
+            body="$(printf '%s\n\n**unidoc-incus specifically**: a version bump here has broken silently before - the static-build patch, the `_tools` list, and the `check()` test-skip list are all pinned against a specific incus release and none of them are re-verified by this script. Read the build log, do not just trust green CI on this one.' "$body")"
+          fi
+
+          gh pr create --title "$PKG: bump to $latest" --body "$body" \
+            --head "$branch" --base master \
+            || echo "PR already open for $branch, or nothing to do"
