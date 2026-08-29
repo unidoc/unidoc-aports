@@ -120,6 +120,16 @@ jobs:
               fi
             '
 
+      # The container's `chown -R builder:builder /work` (needed so the
+      # unprivileged builder user can write into the bind-mounted /work at
+      # all) also reassigns ownership of repo/ as seen from the *host*,
+      # since a bind mount shares raw UID numbers - whatever UID Alpine
+      # gave "builder" inside the container is now what owns repo/ out
+      # here too, which usually isn't the runner's own UID. Reclaim it
+      # before any host-side step touches repo/ again.
+      - name: Reclaim ownership of the build output from the container
+        run: sudo chown -R "$(id -u):$(id -g)" repo
+
       # Every build here targets one specific Alpine release's libraries
       # (dbus/lxc/sqlite/cowsql/etc for unidoc-incus especially - the static
       # packages don't care, but this repo doesn't publish two trees). The
