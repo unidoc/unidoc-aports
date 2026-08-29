@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+# -c is explicit here rather than relying on the binary's compiled-in
+# default (currently /opt/unidoc/etc/unidoc-ndppd.conf, left over from
+# when this shipped as a raw GitHub-release binary, not an apk package) -
+# an apk package puts its config in /etc like every other Alpine package.
+command="/usr/sbin/unidoc-ndppd"
+command_args="-c /etc/unidoc-ndppd.conf -p /run/unidoc-ndppd.pid --syslog ${UNIDOC_NDPPD_OPTS}"
+command_background="true"
+pidfile="/run/unidoc-ndppd.pid"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	checkpath --directory "${pidfile%/*}" --mode 0750
+}

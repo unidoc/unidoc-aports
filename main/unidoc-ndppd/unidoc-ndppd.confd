@@ -1,0 +1,3 @@
+# Extra flags appended to unidoc-ndppd's command line by the init script.
+# See `unidoc-ndppd -h` - e.g. -v / -vv for debug/trace logging.
+#UNIDOC_NDPPD_OPTS="-v"

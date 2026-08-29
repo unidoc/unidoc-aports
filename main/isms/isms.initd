@@ -1,0 +1,23 @@
+#!/sbin/openrc-run
+
+# Mirrors upstream's own contrib/freebsd/rc.d/isms - same env-file-driven
+# config, same required vars. See /etc/conf.d/isms: at minimum DATABASE_URL,
+# ISMS_DATA_DIR, ISMS_STORAGE_BACKEND and ISMS_TEMPLATE_PATH must be set;
+# isms aborts at startup otherwise.
+command="/usr/bin/isms"
+command_args="server serve ${ISMS_ARGS}"
+command_user="isms:isms"
+command_background="true"
+pidfile="/run/isms.pid"
+output_log="/var/log/isms/isms.log"
+error_log="/var/log/isms/isms.log"
+
+depend() {
+	need net
+	use postgresql
+}
+
+start_pre() {
+	checkpath --directory --owner isms:isms --mode 0750 /var/log/isms
+	checkpath --directory --owner isms:isms --mode 0750 "${ISMS_DATA_DIR:-/var/lib/isms}"
+}

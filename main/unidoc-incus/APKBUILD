@@ -1,0 +1,180 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+#
+# Collapsed rebuild of Alpine's own community/incus: upstream splits into
+# ~9 subpackages and deliberately pins to Incus's LTS branch (their own
+# comment says "LTS releases only"). We track the *stable* (non-LTS)
+# branch instead - it moves faster - and ship it as one package plus
+# incus-agent (agent needs to be copyable alone into VM guests, everything
+# else has no reason to be split). `provides=incus=...` lets anything that
+# merely `depends on incus` resolve against us; apk's normal file-conflict
+# check is what actually prevents installing this side by side with
+# Alpine's own incus (same paths, by design - see README).
+#
+# Bumping to a new stable release is manual for now (pkgver + re-verify the
+# static-build patch still applies): see README's "release cadence" section
+# for why this isn't automated yet.
+pkgname=unidoc-incus
+pkgver=7.4.0
+pkgrel=0
+pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
+url="https://github.com/lxc/incus"
+arch="all"
+license="Apache-2.0"
+provides="incus=$pkgver-r$pkgrel"
+depends="acl
+	attr
+	ca-certificates
+	dbus
+	dnsmasq
+	lxc>=6.0.0
+	iproute2
+	netcat-openbsd
+	nftables
+	rsync
+	squashfs-tools
+	shadow-subids
+	tar
+	xz
+	py3-lxc
+	jq
+	losetup
+	sgdisk
+	util-linux-misc
+	virtiofsd
+	qemu-chardev-spice
+	qemu-hw-usb-redirect
+	qemu-hw-display-virtio-vga
+	qemu-img
+	qemu-ui-spice-core
+	"
+# VM firmware + system emulator are arch-specific; upstream's own APKBUILD
+# hardcodes qemu-system-x86_64 even in the aarch64 subpackage, which looks
+# like a copy-paste bug - don't reproduce it, branch on CARCH for real.
+case "$CARCH" in
+	x86_64)  depends="$depends ovmf qemu-system-x86_64>=8.2" ;;
+	aarch64) depends="$depends aavmf qemu-system-aarch64>=8.2" ;;
+esac
+makedepends="acl-dev
+	autoconf
+	automake
+	cowsql-dev
+	raft-cowsql-dev
+	eudev-dev
+	gettext-dev
+	go
+	# incus 7.4.0's go.mod wants go>=1.26.7; Alpine 3.24 packages 1.26.3.
+	# Not pinning a higher version here since Alpine doesn't have one to
+	# pin to - relying on Go's own GOTOOLCHAIN=auto to fetch 1.26.7 over
+	# the network at build time (options="net" below covers this too).
+	# Not hermetic, but there's no other lever to pull until Alpine's own
+	# go package catches up.
+	intltool
+	libcap-dev
+	libtool
+	libuv-dev
+	linux-headers
+	lxc-dev
+	lz4-dev
+	sqlite-dev
+	tcl-dev
+	"
+subpackages="$pkgname-agent"
+install="$pkgname.pre-install"
+options="net"
+
+source="incus-$pkgver.tar.gz::https://github.com/lxc/incus/archive/refs/tags/v$pkgver.tar.gz
+	incusd.confd
+	incusd.initd
+	incus-agent.initd
+	incus-user.initd
+	0001-statically-build-incus-agent-and-incus-migrate.patch
+	"
+builddir="$srcdir/incus-$pkgver"
+
+# Verified directly against the 7.4.0 tarball's cmd/ tree, not carried over
+# unmodified from Alpine's 7.0.1-targeted list: lxd-to-incus was removed
+# upstream between 7.0.1 and 7.4.0 (no trace, not renamed), and mini-oidc/
+# sysinfo/tls2jwt are test fixtures under test/ that `go install ./...`
+# happens to build but that don't belong installed as real /usr/bin tools.
+_tools="fuidshift
+	generate-config
+	generate-database
+	incus
+	incus-benchmark
+	incus-migrate
+	incus-simplestreams
+	lxc-to-incus
+	"
+
+export GOFLAGS="$GOFLAGS -tags=libsqlite3"
+export GOPATH="$srcdir"
+
+prepare() {
+	default_prepare
+	go mod download
+}
+
+build() {
+	export CGO_CFLAGS="-I/usr/include/raft -I/usr/include/cowsql"
+	export CGO_LDFLAGS="$LDFLAGS -lintl"
+	export CGO_LDFLAGS_ALLOW="(-Wl,-wrap,pthread_create)|(-Wl,-z,now)"
+
+	make
+}
+
+check() {
+	export CGO_LDFLAGS="$LDFLAGS -lintl"
+	# Skip list carried over from Alpine's 7.0.1-targeted APKBUILD, not
+	# re-verified against 7.4.0 - the named tests still exist as of this
+	# tarball, but three minor releases may have added new flaky ones this
+	# list doesn't cover. Watch the first real CI run's check() output.
+	go test -v -skip "TestCluster_*|TestIntegration_UnixSocket|TestContainerTestSuite_*|TestDotGo|TestParse|TestPackages|TestConvertNetworkConfig|TestSnapshotCommon|TestHttpRequest" ./...
+}
+
+package() {
+	chmod 755 "$srcdir"/bin/incus
+	"$srcdir"/bin/incus completion bash > "$builddir"/scripts/bash-completion
+
+	# incus-agent installed here too (not just in $_tools/daemon-specific
+	# loops) so agent()/below can amove it out - matches real Alpine's own
+	# split style rather than reinstalling it a second time from scratch.
+	for daemon in incusd incus-agent incus-user; do
+		install -Dm755 "$srcdir"/bin/$daemon "$pkgdir"/usr/sbin/$daemon
+	done
+
+	for tool in $_tools; do
+		install -Dm755 "$srcdir"/bin/$tool "$pkgdir"/usr/bin/$tool
+	done
+
+	for init in incusd incus-agent incus-user; do
+		install -Dm755 "$srcdir"/$init.initd "$pkgdir"/etc/init.d/$init
+	done
+	install -Dm644 "$srcdir"/incusd.confd "$pkgdir"/etc/conf.d/incusd
+
+	install -Dm644 "$builddir"/scripts/bash-completion \
+		"$pkgdir"/usr/share/bash-completion/completions/incus
+
+	install -Dm755 "$builddir"/scripts/empty-incus.sh \
+		"$pkgdir"/usr/bin/empty-incus.sh
+}
+
+agent() {
+	pkgdesc="Incus agent - runs standalone inside VM guests"
+	amove usr/sbin/incus-agent
+	amove etc/init.d/incus-agent
+}
+
+# Real, verified checksums for incus-7.4.0.tar.gz and the OpenRC files
+# copied byte-for-byte from Alpine's aports (same content -> same hash).
+# unidoc-incus.pre-install is not in `source=` (it's a local install
+# script, not a fetched one) so it doesn't get a checksum entry here.
+# The static-build patch (cut against 7.0.x LTS) has been confirmed to
+# apply cleanly to 7.4.0's Makefile (`patch -p1 --dry-run`, clean).
+sha512sums="
+b8bfed7a56bbdbdda9ba55e2cbe6d9aee8a405cf2248b235daa2d43aa9a0db6b09b59a531efca514ccde9907ceab3dd2f52b7c484eaa35216850acb57fb27cd2  incus-7.4.0.tar.gz
+0340f06589acc1509d6cf4c844320f23a40e8da9d6fd1aab59b7424b286bb109e81ded97e26b9a1467f64f378914f4d13f9726c48188468900ab8d88eb528d91  incusd.confd
+ca8762648020b4c933879a7a01b3f6699e9efc1dc1141228342e6619d7e9b07b13d359121767d8cd1ce6d83752ced226964138040454eebec17a3479acdbcda3  incusd.initd
+a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
+ac40bdeb902a95c10d814a92ebf8f94b7d03858796278258b3bac43044329790d64fbd29a90db2491964d0228f894a098fee27699a37e635295b5c4386a50028  incus-user.initd
+3cab43fa7747a9d3d265a209ad0797639e05cf421a376d0a90e8ceb7d06e9b7243366a581e9925f24ac58b6739cc2370a0babb67545e725b9da4404128ca21bd  0001-statically-build-incus-agent-and-incus-migrate.patch
+"

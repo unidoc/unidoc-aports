@@ -1,0 +1,15 @@
+#!/bin/sh
+# Groups the daemons expect to exist: `incus` gates access to the admin
+# socket (incusd.confd's --group incus), `incus-user` gates the unprivileged
+# per-user socket (incus-user.initd). Upstream Alpine's incus.pre-install
+# does the same; -S makes both idempotent on upgrade.
+addgroup -S incus 2>/dev/null
+addgroup -S incus-user 2>/dev/null
+
+# Required for unprivileged containers to get an ID-map range at all -
+# without this, `incus launch` for an unprivileged container fails outright.
+# Matches upstream Alpine's incus.pre-install exactly (same range).
+grep -q '^root:' /etc/subuid 2>/dev/null || echo 'root:1000000:1000000000' >> /etc/subuid
+grep -q '^root:' /etc/subgid 2>/dev/null || echo 'root:1000000:1000000000' >> /etc/subgid
+
+exit 0

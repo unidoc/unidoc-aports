@@ -1,0 +1,7 @@
+#!/bin/sh
+# System user isms runs as - unprivileged, home is the data dir this
+# package's init script creates on first start (see isms.initd).
+addgroup -S isms 2>/dev/null
+adduser -S -D -H -h /var/lib/isms -s /sbin/nologin -G isms -g isms isms 2>/dev/null
+
+exit 0

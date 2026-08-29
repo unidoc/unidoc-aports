@@ -1,0 +1,39 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=unidoc-ndppd
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="IPv6 NDP proxy daemon - UniDoc fork of ndppd"
+url="https://github.com/unidoc/unidoc-ndppd"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="linux-headers"
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/unidoc-ndppd/archive/refs/tags/v$pkgver.tar.gz
+	unidoc-ndppd.initd
+	unidoc-ndppd.confd
+	"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# VERSION explicit, not left to the Makefile's `git describe` fallback -
+	# abuild's extracted tarball has no .git dir, so that fallback would
+	# silently bake in "dev" instead of the real release version.
+	make VERSION="v$pkgver"
+}
+
+check() {
+	./bin/unidoc-ndppd -h >/dev/null
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+
+	install -Dm644 contrib/unidoc-ndppd.conf-dist "$pkgdir"/etc/unidoc-ndppd.conf
+	install -Dm755 "$srcdir"/unidoc-ndppd.initd "$pkgdir"/etc/init.d/unidoc-ndppd
+	install -Dm644 "$srcdir"/unidoc-ndppd.confd "$pkgdir"/etc/conf.d/unidoc-ndppd
+}
+
+sha512sums="
+95529bb04e9d4e07fe3f90a8e90f761789dcd054f9bbf3c2c906bac4773af3d9cd78a0ae3d6e52bb2fdb259cc39e4c6ec4b37c03ff881cff016e84c707863478  unidoc-ndppd-1.0.0.tar.gz
+d746c004cbf366d1e3d64c6d7a5909f83e632d47fe73b9205898e2439d79192606ced2d6d785ee451104b79efbd866bdd1349e68f2befdb4b432370e2107ebe1  unidoc-ndppd.initd
+48bee4ae1e99a6a12ffc71fe7149bd53ca02f7d2a7d4408b0727e6ad72e510380d1361e0424cdfc27a70860b6fe585d6b6b600bb0e6820073262e6dec0a2b697  unidoc-ndppd.confd
+"

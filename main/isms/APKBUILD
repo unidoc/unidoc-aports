@@ -1,0 +1,57 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=isms
+pkgver=0.7.1
+pkgrel=0
+pkgdesc="Open-source ISMS platform - git-native documents, PostgreSQL collaboration, single binary"
+url="https://github.com/unidoc/isms"
+arch="all"
+license="Apache-2.0"
+makedepends="go nodejs npm"
+install="$pkgname.pre-install"
+options="net" # go mod + npm ci both need network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/isms/archive/refs/tags/v$pkgver.tar.gz
+	isms.initd
+	isms.confd
+	"
+builddir="$srcdir/$pkgname-$pkgver"
+
+# CGO_ENABLED=0 pure Go binary using go-git internally (no external `git`
+# binary needed at runtime, confirmed from cmd/isms/main.go's imports) - no
+# runtime depends= at all. isms only ever talks to Postgres over the network
+# (DATABASE_URL), it doesn't need a `psql` binary on the box to do that; add
+# postgresql-client yourself if you actually want an interactive client.
+
+build() {
+	# Mirrors the upstream Justfile's `build-go` recipe exactly (sync
+	# migrations + build the Vue frontend + copy its dist/ into cmd/isms/
+	# for go:embed) rather than depending on `just` as a build tool.
+	./scripts/sync-migrations.sh
+
+	(
+		cd web
+		npm ci
+		npm run build
+	)
+	mkdir -p cmd/isms/web/dist
+	cp -r web/dist/. cmd/isms/web/dist/
+
+	CGO_ENABLED=0 go build -trimpath \
+		-ldflags "-s -w -X main.version=$pkgver -X main.commitHash=release -X main.commitCount=0" \
+		-o isms ./cmd/isms
+}
+
+check() {
+	CGO_ENABLED=0 go test ./internal/isms/... -count=1 -timeout 120s
+}
+
+package() {
+	install -Dm755 isms "$pkgdir"/usr/bin/isms
+	install -Dm755 "$srcdir"/isms.initd "$pkgdir"/etc/init.d/isms
+	install -Dm644 "$srcdir"/isms.confd "$pkgdir"/etc/conf.d/isms
+}
+
+sha512sums="
+237a3e5ce5e0903c8839c2362aa3f2c692257c8c1eaae90b94239f548cf027a7db63469adf445f027169debded63039872471229b770ff43f53484e809eb8ce5  isms-0.7.1.tar.gz
+7dd6bd0b2b4d1af5ffd261322fa3ba28d3df0ad5b562e350e8e9d8e2efb1471478fd831d9200bf672b5e6917d90e20c3d4f1d02eda8d7133a751b58cd82973ec  isms.initd
+b899940824fcf60ea9881ac1d9d468928dc3ee217b1279612b9578ad5728a0fd896b8d4b32ba8cac7deeb53699303c8c8bbe9b94ea21e5bb69a1e42b87617292  isms.confd
+"

@@ -1,0 +1,35 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=unisupply
+pkgver=0.5.0
+pkgrel=0
+pkgdesc="Go supply chain security analysis - vulnerabilities, weak maintainers, typosquatting, CI/CD risks"
+url="https://github.com/unidoc/unisupply"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/unisupply/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Same as the Justfile's `build` recipe, plus CGO_ENABLED=0 (the
+	# Justfile doesn't set it - added here for a static, dependency-free
+	# binary; not claiming exactness with upstream beyond that one addition).
+	# No ldflags/version stamping upstream (no goreleaser here) - `--version`
+	# output will read whatever Go's own auto VCS stamping manages from a
+	# tarball checkout (usually nothing, since there's no .git dir); cosmetic
+	# only.
+	CGO_ENABLED=0 go build -o unisupply ./cmd/unisupply/
+}
+
+check() {
+	CGO_ENABLED=0 go test ./...
+}
+
+package() {
+	install -Dm755 unisupply "$pkgdir"/usr/bin/unisupply
+}
+
+sha512sums="
+b31c44dee92bd308baff06f13e9c808a76c21e649416d5f5fef6a7256d7a21aa39089949daa9fd61c4833d5aba3a9959245971f04d1a36c6c1bee62c3572022c  unisupply-0.5.0.tar.gz
+"

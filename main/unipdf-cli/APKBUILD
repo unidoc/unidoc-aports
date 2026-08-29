@@ -1,0 +1,33 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+#
+# NOTE: unlike every other package in this repo, unipdf-cli is a commercial
+# product (its LICENSE file says so explicitly) - the binary itself is fine
+# to distribute (it's still gated by a license code at runtime, same as
+# e.g. a commercial CLI with a license-key prompt), but `license=` below is
+# deliberately not an OSI identifier. Don't copy this pattern onto the
+# open-source packages in this repo.
+pkgname=unipdf-cli
+pkgver=0.14.0
+pkgrel=0
+pkgdesc="CLI for PDF processing using unipdf (commercial - requires a license code)"
+url="https://github.com/unidoc/unipdf-cli"
+arch="all"
+license="custom"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/unipdf-cli/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Matches the upstream Makefile's plain `build` target (not `release`,
+	# which shells out to goreleaser - not needed for a single native build).
+	CGO_ENABLED=0 go build -o unipdf ./cmd/unipdf/main.go
+}
+
+package() {
+	install -Dm755 unipdf "$pkgdir"/usr/bin/unipdf
+}
+
+sha512sums="
+0e72291a2f65eb1efc24b39756665c8d5a9930c070cc52bef248d5be35f7df97d08ccd303082841c2db1edf059765cfa84d1439e9ba03afbccfba38e7d51dad5  unipdf-cli-0.14.0.tar.gz
+"

@@ -1,0 +1,162 @@
+name: Build and publish
+
+# Manual bump-and-push model for now (see README "release cadence") - this
+# just builds whatever's currently in main/ and republishes. No cron/
+# auto-bump yet.
+#
+# One-time manual prerequisite this file can't do for you: Settings ->
+# Pages -> Build and deployment -> Source must be set to "GitHub Actions"
+# in this repo, or the publish job's deploy-pages step fails outright.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "main/**"
+      - ".github/workflows/build-and-publish.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # No job-level `container:` - actions/checkout and upload-artifact are
+      # JS actions, and GitHub only bundles a Node runtime for x64 Alpine
+      # containers (learned the hard way in unidoc-ndppd's CI: "JavaScript
+      # Actions in Alpine containers are only supported on x64 Linux
+      # runners" on the arm64 runner). Everything Alpine-side runs inside a
+      # throwaway `docker run` container instead; checkout/upload stay on
+      # the host, which has a working Node on both arches.
+      - name: Build all packages in an Alpine container
+        env:
+          ABUILD_PRIVATE_KEY: ${{ secrets.ABUILD_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$PWD/repo" "$PWD/pubkey"
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -e ABUILD_PRIVATE_KEY \
+            alpine:3.24 sh -c '
+              set -e
+              # No sudo/sudoers here on purpose - abuild does not shell out
+              # through sudo to install makedepends, it uses abuild-apk (a
+              # setuid-root helper from the abuild-sudo subpackage, pulled
+              # in automatically alongside alpine-sdk) which only checks
+              # group membership. `addgroup builder abuild` below is the
+              # actual thing that makes dependency auto-install work.
+              apk add --no-cache alpine-sdk openssl
+              adduser -D builder
+              addgroup builder abuild
+
+              mkdir -p /home/builder/.abuild
+              printf "%s\n" "$ABUILD_PRIVATE_KEY" > /home/builder/.abuild/unidoc-aports.rsa
+              chmod 600 /home/builder/.abuild/unidoc-aports.rsa
+              # abuild-sign (which `abuild -r` runs first, before touching
+              # any package) requires the matching .pub to already exist
+              # next to PACKAGER_PRIVKEY - derive it instead of assuming a
+              # pre-committed file stays in sync with whatever key is in
+              # the secret.
+              openssl rsa -in /home/builder/.abuild/unidoc-aports.rsa \
+                -pubout -out /home/builder/.abuild/unidoc-aports.rsa.pub
+              echo "PACKAGER_PRIVKEY=/home/builder/.abuild/unidoc-aports.rsa" \
+                > /home/builder/.abuild/abuild.conf
+              chown -R builder:builder /home/builder /work
+
+              cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
+
+              # REPODEST nests under main/ so the published tree mirrors
+              # Alpine's own dl-cdn layout (.../v3.20/main/x86_64/...) -
+              # channel segment first, then arch. One channel for now; a
+              # second (e.g. testing) would just be another top-level dir
+              # here and another REPODEST.
+              #
+              # Failures are isolated per package (not `set -e` over the
+              # loop): one broken package must not take four working ones
+              # down with it. build-status.txt is checked in a later step
+              # so the job still ends up failed overall, just after
+              # everything that *did* build has been uploaded.
+              failed=""
+              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli; do
+                if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo/main abuild -r"; then
+                  echo "::error::$pkg failed to build"
+                  failed="$failed $pkg"
+                fi
+              done
+              if [ -n "$failed" ]; then
+                echo "$failed" > /work/build-status.txt
+              fi
+            '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repo-${{ matrix.arch }}
+          path: repo/main/${{ matrix.arch }}
+          if-no-files-found: error
+
+      # Only one leg needs to publish the key - it's arch-independent.
+      - if: matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubkey
+          path: pubkey/*
+          if-no-files-found: error
+
+      - name: Fail the job if any package failed to build
+        if: always()
+        run: test ! -f build-status.txt
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: site
+          pattern: repo-*
+          merge-multiple: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pubkey
+          path: site/pubkey
+
+      # download-artifact lands each arch's files under site/repo-<arch>/ -
+      # apk expects <repo-root>/main/<arch>/... (repo URL = https://pkg.unidoc.io/main),
+      # so flatten one level into that shape. The pubkey goes to keys/, the
+      # URL the README's install instructions already point at. CNAME pins
+      # the custom domain - required every deploy, GitHub Actions-based
+      # Pages publishes don't persist it on their own the way the old
+      # branch-based flow did; the Settings > Pages > Custom domain field
+      # still needs to be set once too (see README).
+      - name: Arrange repo tree for apk
+        run: |
+          mkdir -p out/main out/keys
+          for d in site/repo-*; do
+            arch="$(basename "$d" | sed 's/^repo-//')"
+            mkdir -p "out/main/$arch"
+            cp -r "$d"/* "out/main/$arch/"
+          done
+          cp site/pubkey/unidoc-aports.rsa.pub out/keys/
+          echo "pkg.unidoc.io" > out/CNAME
+          ls -R out
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
