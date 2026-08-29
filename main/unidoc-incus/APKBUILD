@@ -54,6 +54,15 @@ case "$CARCH" in
 	x86_64)  depends="$depends ovmf qemu-system-x86_64>=8.2" ;;
 	aarch64) depends="$depends aavmf qemu-system-aarch64>=8.2" ;;
 esac
+# incus 7.4.0's go.mod wants go>=1.26.7; Alpine 3.24 packages 1.26.3. Not
+# pinning a higher version in makedepends below since Alpine doesn't have
+# one to pin to - relying on Go's own GOTOOLCHAIN=auto to fetch 1.26.7 over
+# the network at build time (options="net" below covers this too). Not
+# hermetic, but there's no other lever to pull until Alpine's own go
+# package catches up. (This note lives outside makedepends= on purpose -
+# a "#" inside a quoted string is just a literal character, not a comment
+# marker, so putting it inline there once made abuild try to parse a
+# sentence fragment as a package version spec.)
 makedepends="acl-dev
 	autoconf
 	automake
@@ -62,12 +71,6 @@ makedepends="acl-dev
 	eudev-dev
 	gettext-dev
 	go
-	# incus 7.4.0's go.mod wants go>=1.26.7; Alpine 3.24 packages 1.26.3.
-	# Not pinning a higher version here since Alpine doesn't have one to
-	# pin to - relying on Go's own GOTOOLCHAIN=auto to fetch 1.26.7 over
-	# the network at build time (options="net" below covers this too).
-	# Not hermetic, but there's no other lever to pull until Alpine's own
-	# go package catches up.
 	intltool
 	libcap-dev
 	libtool

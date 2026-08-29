@@ -52,7 +52,15 @@ jobs:
               # in automatically alongside alpine-sdk) which only checks
               # group membership. `addgroup builder abuild` below is the
               # actual thing that makes dependency auto-install work.
-              apk add --no-cache alpine-sdk openssl
+              # No --no-cache here on purpose: abuild-apk (below) only ever
+              # reads an already-populated local package index, it does not
+              # perform its own first-time network index fetch (a sensible
+              # restriction for a setuid-root helper an unprivileged user
+              # can invoke). --no-cache explicitly skips persisting that
+              # index, which left abuild-apk with nothing to read and every
+              # makedepends lookup failing "no such package".
+              apk update
+              apk add alpine-sdk openssl
               adduser -D builder
               addgroup builder abuild
 
@@ -72,11 +80,16 @@ jobs:
 
               cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
 
-              # REPODEST nests under main/ so the published tree mirrors
-              # the real Alpine dl-cdn layout (.../v3.20/main/x86_64/...) -
-              # channel segment first, then arch. One channel for now; a
-              # second (e.g. testing) would just be another top-level dir
-              # here and another REPODEST.
+              # REPODEST is the repo *root*, not .../main - abuild derives
+              # the channel segment itself from the parent directory name of
+              # the package being built (checked against abuild.in:
+              # repo=${startdir%/*}; repo=${repo##*/}), and every package
+              # here lives under main/, so abuild already appends "main"
+              # automatically. Setting REPODEST=.../repo/main here too
+              # produced a real main/main/x86_64/ double-nesting -
+              # REPODEST=/work/repo is the fix. Bonus: a second channel
+              # (e.g. testing/) then needs zero CI changes, since abuild
+              # reads the channel straight from the directory being built.
               #
               # Failures are isolated per package (not `set -e` over the
               # loop): one broken package must not take four working ones
@@ -85,7 +98,7 @@ jobs:
               # everything that *did* build has been uploaded.
               failed=""
               for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli; do
-                if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo/main abuild -r"; then
+                if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo abuild -r"; then
                   echo "::error::$pkg failed to build"
                   failed="$failed $pkg"
                 fi
