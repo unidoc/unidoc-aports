@@ -21,6 +21,17 @@ on:
 
 jobs:
   build:
+    # ABUILD_PRIVATE_KEY lives in the "signing" environment, not as a plain
+    # repository secret - a repo secret can be created/overwritten by
+    # anyone with Write access (confirmed against GitHub's own docs, not
+    # assumed), which for a signing key is a real risk independent of
+    # branch protection: overwriting a secret isn't a git push, so
+    # master-protection's PR+review requirement never even sees it.
+    # Environment secrets require Admin to touch. No protection rules
+    # (required reviewers, wait timer) are set on this environment - it
+    # exists purely to raise the permission bar on the secret itself, not
+    # to add approval friction to every build.
+    environment: signing
     strategy:
       fail-fast: false
       matrix:
