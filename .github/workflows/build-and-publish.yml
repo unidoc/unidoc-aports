@@ -95,7 +95,14 @@ jobs:
                 # signs here is ever published; the pubkey/ copy above is
                 # also skipped, since there's nothing worth publishing from
                 # a throwaway key.
-                HOME=/home/builder PACKAGER="PR check (throwaway key)" abuild-keygen -a -n
+                # PACKAGER becomes part of the generated key's *filename*
+                # (abuild-keygen names it "$PACKAGER-<timestamp>.rsa") -
+                # spaces and parens in that value produced a filename that
+                # broke unquoted glob expansion two lines down
+                # (`*.rsa.pub`), which the shell then re-parsed as broken
+                # syntax. Keep this filename-safe: no spaces, no
+                # shell-special characters, ever.
+                HOME=/home/builder PACKAGER="pr-check-throwaway" abuild-keygen -a -n
               fi
               # apk index (which abuild runs after every package build)
               # verifies each .apk it indexes against the system trust
