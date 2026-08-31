@@ -150,14 +150,10 @@ to be set once by hand; nothing in `main/**` triggers them.
 | `isms` | [unidoc/isms](https://github.com/unidoc/isms) | Go + Vue (embedded) | scaffolded |
 | `unisupply` | [unidoc/unisupply](https://github.com/unidoc/unisupply) | Go | scaffolded |
 | `unipdf-cli` | [unidoc/unipdf-cli](https://github.com/unidoc/unipdf-cli) | Go | scaffolded - commercial (license code required at runtime), `license=custom` reflects that |
+| `pdfdebug` | [unidoc/pdfdebug](https://github.com/unidoc/pdfdebug) | Go | scaffolded - `cmd/cli` only (`dump`/`validate`/`diff`), not the wails v3 GUI/server target. Tried server mode first: building the `wails3` codegen CLI pulls in a package with an unconditional `pkg-config gtk4 webkitgtk-6.0` check - a heavy GUI-toolkit build dependency for a binary that would never touch a display at runtime. `cmd/cli` has zero wails/CGO dependency (confirmed by grepping the actual source), plain `go build`, no extra risk |
 
 **Not yet scaffolded:**
 
-- `pdfdebug` ([unidoc/pdfdebug](https://github.com/unidoc/pdfdebug)) - a
-  Wails desktop app with a separate `server` build tag (HTTP-only, no GUI
-  deps) that's the one relevant here. More novel packaging shape than
-  anything above (embedded frontend + wails build tooling); wanted a closer
-  look before writing something that only looks right.
 - `isms-python` ([unidoc/isms-python](https://github.com/unidoc/isms-python)) -
   a Python client library, not a system service. This is a `py3-isms`-style
   APKBUILD (pyproject/gpep517 build class), a genuinely different shape from

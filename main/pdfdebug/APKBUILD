@@ -1,0 +1,34 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+#
+# cmd/cli only - not the wails v3 GUI/server target. Confirmed by actually
+# trying the server build first: `go install` for the wails3 codegen CLI
+# pulls in github.com/wailsapp/wails/v3/internal/operatingsystem, which has
+# an unconditional pkg-config check for gtk4 + webkitgtk-6.0 - a real,
+# heavy GUI-toolkit build dependency just to compile a codegen tool, for a
+# binary that never touches a display at runtime. Not worth it for what
+# this repo needs. cmd/cli has zero wails/CGO dependency (grepped the
+# actual source myself, not just trusted a docs claim) - a one-shot stdout
+# PDF inspection tool (dump/validate/diff subcommands), nothing else.
+pkgname=pdfdebug
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="UniDoc PDF Debugger - CLI PDF inspection tool (dump/validate/diff)"
+url="https://github.com/unidoc/pdfdebug"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/pdfdebug/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o pdfdebug ./cmd/cli
+}
+
+package() {
+	install -Dm755 pdfdebug "$pkgdir"/usr/bin/pdfdebug
+}
+
+sha512sums="
+d594c6cdff324efc7c31e194a725de7bdd576bcb8f1636a787048f8c5ed5a9260df45a9a2edaec53f77476a4d5536509ef11c1781de239fdd097111585b7611a  pdfdebug-0.4.0.tar.gz
+"

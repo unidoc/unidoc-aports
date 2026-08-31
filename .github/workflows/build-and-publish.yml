@@ -21,6 +21,17 @@ on:
 
 jobs:
   build:
+    # ABUILD_PRIVATE_KEY lives in the "signing" environment, not as a plain
+    # repository secret - a repo secret can be created/overwritten by
+    # anyone with Write access (confirmed against GitHub's own docs, not
+    # assumed), which for a signing key is a real risk independent of
+    # branch protection: overwriting a secret isn't a git push, so
+    # master-protection's PR+review requirement never even sees it.
+    # Environment secrets require Admin to touch. No protection rules
+    # (required reviewers, wait timer) are set on this environment - it
+    # exists purely to raise the permission bar on the secret itself, not
+    # to add approval friction to every build.
+    environment: signing
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +61,17 @@ jobs:
             -e ABUILD_PRIVATE_KEY \
             alpine:3.24 sh -c '
               set -e
+              # Real root cause of the "environment: line N: syntax error"
+              # saga: a literal apostrophe in a comment on this block was
+              # ending the outer bash single quote (the one wrapping this
+              # entire sh -c argument) early - everything after it,
+              # including the eventual `fi`, was silently dropped from
+              # what sh actually received, not from what this file visibly
+              # shows. set -x traced execution up to the line right before
+              # the apostrophe, then nothing - that mismatch is what gave
+              # it away. Every comment in this block from here down has to
+              # stay apostrophe-free, permanently - no exceptions, no
+              # matter how natural the contraction reads.
               # No sudo/sudoers here on purpose - abuild does not shell out
               # through sudo to install makedepends, it uses abuild-apk (a
               # setuid-root helper from the abuild-sudo subpackage, pulled
@@ -88,14 +110,21 @@ jobs:
                 # withholds the real secret from fork PRs on its own, but
                 # this means that protection is never the *only* thing
                 # standing between a PR and the real key: it simply is not
-                # in this container's environment for anything except a
+                # in this container environment for anything except a
                 # push to master). abuild still needs *some* key to get
                 # through its build+index+sign pipeline - generate a
                 # disposable one that dies with this container. Nothing it
                 # signs here is ever published; the pubkey/ copy above is
-                # also skipped, since there's nothing worth publishing from
+                # also skipped, since there is nothing worth publishing from
                 # a throwaway key.
-                HOME=/home/builder PACKAGER="PR check (throwaway key)" abuild-keygen -a -n
+                # PACKAGER becomes part of the generated key filename
+                # (abuild-keygen names it "$PACKAGER-<timestamp>.rsa") -
+                # spaces and parens in that value produced a filename that
+                # broke unquoted glob expansion two lines down
+                # (`*.rsa.pub`), which the shell then re-parsed as broken
+                # syntax. Keep this filename-safe: no spaces, no
+                # shell-special characters, ever.
+                HOME=/home/builder PACKAGER="pr-check-throwaway" abuild-keygen -a -n
               fi
               # apk index (which abuild runs after every package build)
               # verifies each .apk it indexes against the system trust
@@ -125,7 +154,7 @@ jobs:
               # so the job still ends up failed overall, just after
               # everything that *did* build has been uploaded.
               failed=""
-              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli; do
+              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli pdfdebug; do
                 if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo abuild -r"; then
                   echo "::error::$pkg failed to build"
                   failed="$failed $pkg"

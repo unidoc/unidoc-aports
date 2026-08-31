@@ -48,6 +48,9 @@ jobs:
           - pkg: unipdf-cli
             repo: unidoc/unipdf-cli
             archive: unipdf-cli
+          - pkg: pdfdebug
+            repo: unidoc/pdfdebug
+            archive: pdfdebug
     steps:
       - uses: actions/checkout@v4
 
@@ -97,7 +100,6 @@ jobs:
           if [ "$PKG" = "unidoc-incus" ]; then
             body="$(printf '%s\n\n**unidoc-incus specifically**: a version bump here has broken silently before - the static-build patch, the `_tools` list, and the `check()` test-skip list are all pinned against a specific incus release and none of them are re-verified by this script. Read the build log, do not just trust green CI on this one.' "$body")"
           fi
-
           gh pr create --title "$PKG: bump to $latest" --body "$body" \
             --head "$branch" --base master \
             || echo "PR already open for $branch, or nothing to do"
