@@ -1,66 +1,34 @@
 # Maintainer: UniDoc <ahall@unidoc.io>
 #
-# This is the riskiest package in this repo. Server mode (`-tags server`)
-# swaps wails v3's entire native GUI backend for a plain HTTP server -
-# confirmed by actually building and running it, not by reading docs
-# (upstream's own README documents nothing about server mode at all, and
-# its version number for the wails3 CLI there is stale - go.mod is the
-# real source of truth). It works. What's genuinely unverified: upstream
-# never builds or tests this configuration in its own CI (only the GUI
-# and cmd/cli targets are covered there) - we would be the first real
-# exercise of this exact build path. If this breaks, that is the most
-# likely reason, not a mistake below.
-#
-# wails3 (the codegen CLI, not an Alpine package) is pinned to the exact
-# alpha version go.mod requires - a mismatch here breaks bindings
-# generation in ways that are not obvious from the build log.
+# cmd/cli only - not the wails v3 GUI/server target. Confirmed by actually
+# trying the server build first: `go install` for the wails3 codegen CLI
+# pulls in github.com/wailsapp/wails/v3/internal/operatingsystem, which has
+# an unconditional pkg-config check for gtk4 + webkitgtk-6.0 - a real,
+# heavy GUI-toolkit build dependency just to compile a codegen tool, for a
+# binary that never touches a display at runtime. Not worth it for what
+# this repo needs. cmd/cli has zero wails/CGO dependency (grepped the
+# actual source myself, not just trusted a docs claim) - a one-shot stdout
+# PDF inspection tool (dump/validate/diff subcommands), nothing else.
 pkgname=pdfdebug
 pkgver=0.4.0
 pkgrel=0
-pkgdesc="UniDoc PDF Debugger - HTTP server mode (no native GUI)"
+pkgdesc="UniDoc PDF Debugger - CLI PDF inspection tool (dump/validate/diff)"
 url="https://github.com/unidoc/pdfdebug"
 arch="all"
-# Server mode embeds the same frontend/dist as the GUI build, which
-# bundles Inter/JetBrains Mono under OFL-1.1 (see NOTICE) - the app code
-# itself is Apache-2.0, but this specific binary is a combination of both.
-license="Apache-2.0 AND OFL-1.1"
-makedepends="go nodejs npm"
-install="$pkgname.pre-install"
-options="net" # go install (wails3 CLI) + npm ci both need network
-source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/pdfdebug/archive/refs/tags/v$pkgver.tar.gz
-	pdfdebug.initd
-	pdfdebug.confd
-	"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/pdfdebug/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
 build() {
-	# wails3 CLI: confirmed CGO-free and static to build on its own (the
-	# GUI-only deps live in the *application* package it's invoked
-	# against, not in the CLI tool itself). Version must match go.mod
-	# exactly - README's own "Build from Source" section names an older,
-	# wrong one.
-	go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.103
-	export PATH="$PATH:$(go env GOPATH)/bin"
-
-	(cd frontend && npm ci)
-	# Confirmed this runs cleanly with no pkg-config/GTK present (emits
-	# warnings for the GUI-only files it can't type-check, not errors) -
-	# it's static analysis over the Go source, not a real compile.
-	wails3 generate bindings -clean=true
-	(cd frontend && npm run build)
-
-	CGO_ENABLED=0 go build -tags server -trimpath -ldflags "-s -w" \
-		-o pdfdebug-server .
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o pdfdebug ./cmd/cli
 }
 
 package() {
-	install -Dm755 pdfdebug-server "$pkgdir"/usr/bin/pdfdebug-server
-	install -Dm755 "$srcdir"/pdfdebug.initd "$pkgdir"/etc/init.d/pdfdebug
-	install -Dm644 "$srcdir"/pdfdebug.confd "$pkgdir"/etc/conf.d/pdfdebug
+	install -Dm755 pdfdebug "$pkgdir"/usr/bin/pdfdebug
 }
 
 sha512sums="
 d594c6cdff324efc7c31e194a725de7bdd576bcb8f1636a787048f8c5ed5a9260df45a9a2edaec53f77476a4d5536509ef11c1781de239fdd097111585b7611a  pdfdebug-0.4.0.tar.gz
-098c62cacc790f5c974acc2dfd6c72976a252c04f1f6018f788f47afeea997e866c581e09c20af9f5910ea96088a69bc5b6f3bdfdcc923a74e1195028563c9eb  pdfdebug.initd
-237eb96de582c233d59d4295896c74b7f8d4c64f122383edd398883fc2fcfa0bdd052cd69c10231b464447d8056d0f09f2964fad9c960253204a247c17bcdcdc  pdfdebug.confd
 "

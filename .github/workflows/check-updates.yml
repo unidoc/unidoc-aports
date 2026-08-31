@@ -100,10 +100,6 @@ jobs:
           if [ "$PKG" = "unidoc-incus" ]; then
             body="$(printf '%s\n\n**unidoc-incus specifically**: a version bump here has broken silently before - the static-build patch, the `_tools` list, and the `check()` test-skip list are all pinned against a specific incus release and none of them are re-verified by this script. Read the build log, do not just trust green CI on this one.' "$body")"
           fi
-          if [ "$PKG" = "pdfdebug" ]; then
-            body="$(printf '%s\n\n**pdfdebug specifically**: build() pins an exact `wails3` CLI version (`go install github.com/wailsapp/wails/v3/cmd/wails3@...`) that has to match this release'"'"'s go.mod exactly - a new pdfdebug release may bump its wails dependency, and this script never touches that pin. Check go.mod'"'"'s wails/v3 version against the pinned wails3 install version in the APKBUILD before merging; a mismatch breaks bindings generation in ways that are not obvious from a passing build log. Also: upstream does not build or test server mode (`-tags server`, what this package actually ships) in its own CI at all - this is genuinely the first real exercise of whatever changed.' "$body")"
-          fi
-
           gh pr create --title "$PKG: bump to $latest" --body "$body" \
             --head "$branch" --base master \
             || echo "PR already open for $branch, or nothing to do"

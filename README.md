@@ -150,7 +150,7 @@ to be set once by hand; nothing in `main/**` triggers them.
 | `isms` | [unidoc/isms](https://github.com/unidoc/isms) | Go + Vue (embedded) | scaffolded |
 | `unisupply` | [unidoc/unisupply](https://github.com/unidoc/unisupply) | Go | scaffolded |
 | `unipdf-cli` | [unidoc/unipdf-cli](https://github.com/unidoc/unipdf-cli) | Go | scaffolded - commercial (license code required at runtime), `license=custom` reflects that |
-| `pdfdebug` | [unidoc/pdfdebug](https://github.com/unidoc/pdfdebug) | Go + wails v3 (server mode, embedded frontend) | scaffolded, **the riskiest package here** - upstream never builds or tests server mode (`-tags server`, what this package ships) in its own CI, and `build()` pins an exact alpha version of the `wails3` codegen CLI that has to track go.mod by hand on every bump. `license="Apache-2.0 AND OFL-1.1"` (embedded fonts). No authentication of any kind - binds `localhost` only by default on purpose, see `pdfdebug.confd` |
+| `pdfdebug` | [unidoc/pdfdebug](https://github.com/unidoc/pdfdebug) | Go | scaffolded - `cmd/cli` only (`dump`/`validate`/`diff`), not the wails v3 GUI/server target. Tried server mode first: building the `wails3` codegen CLI pulls in a package with an unconditional `pkg-config gtk4 webkitgtk-6.0` check - a heavy GUI-toolkit build dependency for a binary that would never touch a display at runtime. `cmd/cli` has zero wails/CGO dependency (confirmed by grepping the actual source), plain `go build`, no extra risk |
 
 **Not yet scaffolded:**
 
