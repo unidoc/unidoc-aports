@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+# pdfdebug-server takes no CLI flags and reads no config file - confirmed
+# by actually running it, not from docs (upstream's README documents
+# nothing about server mode at all). Everything configurable comes from
+# WAILS_SERVER_HOST/WAILS_SERVER_PORT env vars, set in /etc/conf.d/pdfdebug.
+command="/usr/bin/pdfdebug-server"
+command_user="pdfdebug:pdfdebug"
+command_background="true"
+pidfile="/run/pdfdebug-server.pid"
+output_log="/var/log/pdfdebug/pdfdebug-server.log"
+error_log="/var/log/pdfdebug/pdfdebug-server.log"
+
+depend() {
+	need net
+}
+
+start_pre() {
+	checkpath --directory --owner pdfdebug:pdfdebug --mode 0750 /var/log/pdfdebug
+}

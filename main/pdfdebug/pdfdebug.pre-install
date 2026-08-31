@@ -1,0 +1,8 @@
+#!/bin/sh
+# Unprivileged, no home dir - confirmed by research (not assumed) that
+# pdfdebug-server keeps no state of its own: no database, no writes
+# outside stdout/logs. Nothing for a home directory to hold.
+addgroup -S pdfdebug 2>/dev/null
+adduser -S -D -H -s /sbin/nologin -G pdfdebug -g pdfdebug pdfdebug 2>/dev/null
+
+exit 0
