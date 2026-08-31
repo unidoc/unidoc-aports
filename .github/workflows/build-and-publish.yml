@@ -49,7 +49,15 @@ jobs:
             -v "$PWD:/work" -w /work \
             -e ABUILD_PRIVATE_KEY \
             alpine:3.24 sh -c '
-              set -e
+              set -ex
+              # -x is temporary: every attempt to reproduce "environment:
+              # line 40: syntax error: unexpected end of file (expecting
+              # fi)" locally (real BusyBox ash -n on this exact script,
+              # real ash -c execution, ash -n on every APKBUILD) came back
+              # clean - something only reproduces inside the real
+              # container. -x prints every command as it runs so the next
+              # failure pinpoints the actual line instead of guessing
+              # again. Remove once this is understood.
               # No sudo/sudoers here on purpose - abuild does not shell out
               # through sudo to install makedepends, it uses abuild-apk (a
               # setuid-root helper from the abuild-sudo subpackage, pulled
