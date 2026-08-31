@@ -69,28 +69,44 @@ jobs:
               addgroup builder abuild
 
               mkdir -p /home/builder/.abuild
-              printf "%s\n" "$ABUILD_PRIVATE_KEY" > /home/builder/.abuild/unidoc-aports.rsa
-              chmod 600 /home/builder/.abuild/unidoc-aports.rsa
-              # abuild-sign (which `abuild -r` runs first, before touching
-              # any package) requires the matching .pub to already exist
-              # next to PACKAGER_PRIVKEY - derive it instead of assuming a
-              # pre-committed file stays in sync with whatever key is in
-              # the secret.
-              openssl rsa -in /home/builder/.abuild/unidoc-aports.rsa \
-                -pubout -out /home/builder/.abuild/unidoc-aports.rsa.pub
-              echo "PACKAGER_PRIVKEY=/home/builder/.abuild/unidoc-aports.rsa" \
-                > /home/builder/.abuild/abuild.conf
+              if [ -n "$ABUILD_PRIVATE_KEY" ]; then
+                printf "%s\n" "$ABUILD_PRIVATE_KEY" > /home/builder/.abuild/unidoc-aports.rsa
+                chmod 600 /home/builder/.abuild/unidoc-aports.rsa
+                # abuild-sign (which `abuild -r` runs first, before
+                # touching any package) requires the matching .pub to
+                # already exist next to PACKAGER_PRIVKEY - derive it
+                # instead of assuming a pre-committed file stays in sync
+                # with whatever key is in the secret.
+                openssl rsa -in /home/builder/.abuild/unidoc-aports.rsa \
+                  -pubout -out /home/builder/.abuild/unidoc-aports.rsa.pub
+                echo "PACKAGER_PRIVKEY=/home/builder/.abuild/unidoc-aports.rsa" \
+                  > /home/builder/.abuild/abuild.conf
+                cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
+              else
+                # PR-triggered build (check-updates.yml opens these from
+                # branches in this same repo, not a fork - GitHub already
+                # withholds the real secret from fork PRs on its own, but
+                # this means that protection is never the *only* thing
+                # standing between a PR and the real key: it simply is not
+                # in this container's environment for anything except a
+                # push to master). abuild still needs *some* key to get
+                # through its build+index+sign pipeline - generate a
+                # disposable one that dies with this container. Nothing it
+                # signs here is ever published; the pubkey/ copy above is
+                # also skipped, since there's nothing worth publishing from
+                # a throwaway key.
+                HOME=/home/builder PACKAGER="PR check (throwaway key)" abuild-keygen -a -n
+              fi
               # apk index (which abuild runs after every package build)
               # verifies each .apk it indexes against the system trust
               # store - without this, it rejects our own just-built,
               # just-self-signed packages with "UNTRUSTED signature" before
               # the index can even be created. abuild-keygen -i does this
               # automatically for a freshly-generated local key; nothing
-              # does it for a key written straight from a secret like this.
-              cp /home/builder/.abuild/unidoc-aports.rsa.pub /etc/apk/keys/
+              # does it for a key written straight from a secret like this,
+              # so cover both cases with the same glob.
+              cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/
               chown -R builder:builder /home/builder /work
-
-              cp /home/builder/.abuild/unidoc-aports.rsa.pub /work/pubkey/
 
               # REPODEST is the repo *root*, not .../main - abuild derives
               # the channel segment itself from the parent directory name of
@@ -153,8 +169,11 @@ jobs:
           path: repo/v${{ env.ALPINE_VER }}/main/${{ matrix.arch }}
           if-no-files-found: error
 
-      # Only one leg needs to publish the key - it's arch-independent.
-      - if: matrix.arch == 'x86_64'
+      # Only one leg needs to publish the key - it's arch-independent. Never
+      # on a PR either - pubkey/ is deliberately empty there (see the
+      # throwaway-key branch above), and there's nothing to publish from a
+      # build that isn't going anywhere near the live site.
+      - if: matrix.arch == 'x86_64' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: pubkey
