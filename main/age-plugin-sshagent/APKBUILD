@@ -1,0 +1,32 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=age-plugin-sshagent
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="age plugin deriving X25519 identities from ssh-agent signatures - UniDoc fork of eszio/age-plugin-sshagent"
+url="https://github.com/unidoc/age-plugin-sshagent"
+arch="all"
+license="BSD-3-Clause"
+makedepends="go"
+checkdepends="age" # TestAgeCLIEndToEnd t.Skip()s without the `age` binary in
+                   # PATH, so check() silently loses the plugin-protocol path
+                   # (the one thing this binary exists to do) without this.
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/age-plugin-sshagent/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Same as the Justfile's `build` recipe (ldflags, version stamping).
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o age-plugin-sshagent .
+}
+
+check() {
+	CGO_ENABLED=0 go test ./...
+}
+
+package() {
+	install -Dm755 age-plugin-sshagent "$pkgdir"/usr/bin/age-plugin-sshagent
+}
+
+sha512sums="
+b8592a7b870a2d40c70b67433a52bd6e6195fecc4fa0f4ba9a9d8c1d0b6c729a08a61131a76b1f48dc27cc3ded42822158fd14b8ef0f4a0401eb0a574231ef88  age-plugin-sshagent-0.1.0.tar.gz
+"

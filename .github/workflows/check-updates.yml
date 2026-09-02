@@ -51,6 +51,12 @@ jobs:
           - pkg: pdfdebug
             repo: unidoc/pdfdebug
             archive: pdfdebug
+          - pkg: age-plugin-sshagent
+            repo: unidoc/age-plugin-sshagent
+            archive: age-plugin-sshagent
+          - pkg: incus-sync
+            repo: unidoc/incus-sync
+            archive: incus-sync
     steps:
       - uses: actions/checkout@v4
 
