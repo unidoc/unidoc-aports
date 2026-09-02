@@ -154,7 +154,7 @@ jobs:
               # so the job still ends up failed overall, just after
               # everything that *did* build has been uploaded.
               failed=""
-              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli pdfdebug; do
+              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli pdfdebug age-plugin-sshagent incus-sync; do
                 if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo abuild -r"; then
                   echo "::error::$pkg failed to build"
                   failed="$failed $pkg"

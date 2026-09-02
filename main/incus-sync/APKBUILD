@@ -1,0 +1,29 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=incus-sync
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Declarative GitOps fleet manager for Incus"
+url="https://github.com/unidoc/incus-sync"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/incus-sync/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Same as the Justfile's `build` recipe (ldflags, version stamping).
+	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$pkgver" -o incus-sync ./cmd/incus-sync
+}
+
+check() {
+	CGO_ENABLED=0 go test ./...
+}
+
+package() {
+	install -Dm755 incus-sync "$pkgdir"/usr/bin/incus-sync
+}
+
+sha512sums="
+ccb6e11ee3085d78ef50b95d155a7545b9126939d7438b8f51352893abaa0a0d2a3ecf075bfd6ffec1fea49860a33caf53e2199e5b9487a5f576ad2dc26a941b  incus-sync-0.1.0.tar.gz
+"

@@ -16,7 +16,7 @@ echo "https://pkg.unidoc.io/v$(cut -d. -f1,2 /etc/alpine-release)/main" \
   >> /etc/apk/repositories
 apk update
 
-apk add unidoc-incus unidoc-ndppd isms unisupply unipdf-cli
+apk add unidoc-incus unidoc-ndppd isms unisupply unipdf-cli age-plugin-sshagent incus-sync
 ```
 
 **Supported Alpine version: always current stable, nothing else.** This
@@ -151,6 +151,8 @@ to be set once by hand; nothing in `main/**` triggers them.
 | `unisupply` | [unidoc/unisupply](https://github.com/unidoc/unisupply) | Go | scaffolded |
 | `unipdf-cli` | [unidoc/unipdf-cli](https://github.com/unidoc/unipdf-cli) | Go | scaffolded - commercial (license code required at runtime), `license=custom` reflects that |
 | `pdfdebug` | [unidoc/pdfdebug](https://github.com/unidoc/pdfdebug) | Go | scaffolded - `cmd/cli` only (`dump`/`validate`/`diff`), not the wails v3 GUI/server target. Tried server mode first: building the `wails3` codegen CLI pulls in a package with an unconditional `pkg-config gtk4 webkitgtk-6.0` check - a heavy GUI-toolkit build dependency for a binary that would never touch a display at runtime. `cmd/cli` has zero wails/CGO dependency (confirmed by grepping the actual source), plain `go build`, no extra risk |
+| `age-plugin-sshagent` | [unidoc/age-plugin-sshagent](https://github.com/unidoc/age-plugin-sshagent) | Go | build- and test-verified against the real v0.1.0 release tarball |
+| `incus-sync` | [unidoc/incus-sync](https://github.com/unidoc/incus-sync) | Go | build- and test-verified against the real v0.1.0 release tarball |
 
 **Not yet scaffolded:**
 
