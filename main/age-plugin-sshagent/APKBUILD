@@ -7,13 +7,16 @@ url="https://github.com/unidoc/age-plugin-sshagent"
 arch="all"
 license="BSD-3-Clause"
 makedepends="go"
+checkdepends="age" # TestAgeCLIEndToEnd t.Skip()s without the `age` binary in
+                   # PATH, so check() silently loses the plugin-protocol path
+                   # (the one thing this binary exists to do) without this.
 options="net" # go mod needs network at build time
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/age-plugin-sshagent/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
 build() {
 	# Same as the Justfile's `build` recipe (ldflags, version stamping).
-	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$pkgver" -o age-plugin-sshagent .
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o age-plugin-sshagent .
 }
 
 check() {

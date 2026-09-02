@@ -6,14 +6,23 @@ pkgdesc="Declarative GitOps fleet manager for Incus"
 url="https://github.com/unidoc/incus-sync"
 arch="all"
 license="Apache-2.0"
+# incus-sync shells out to incus, sops, git and sh - all behind an
+# exec.LookPath guard or busybox-provided (internal/incus/client.go,
+# cmd_vault.go, cmd_remote.go, internal/gitcheck/gitcheck.go), so nothing
+# crashes on a bare Alpine box without them. No hard depends="incus":
+# internal/incus/client.go supports remote hosts (ConnectIncus(r.URL, ...))
+# as well as the local unix socket, so the tool genuinely runs off-host.
+# git and sops are recommended, not required, for the fleet workflow.
 makedepends="go"
 options="net" # go mod needs network at build time
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/incus-sync/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
 build() {
-	# Same as the Justfile's `build` recipe (ldflags, version stamping).
-	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$pkgver" -o incus-sync ./cmd/incus-sync
+	# Same as the Justfile's `build` recipe (ldflags, version stamping),
+	# plus -trimpath: without it Go embeds the builder's absolute srcdir
+	# path in the binary (confirmed: 41 occurrences without, 0 with).
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o incus-sync ./cmd/incus-sync
 }
 
 check() {
@@ -22,6 +31,12 @@ check() {
 
 package() {
 	install -Dm755 incus-sync "$pkgdir"/usr/bin/incus-sync
+
+	# Upstream's Justfile installs this as part of a normal install; the
+	# subcommand needs no fleet config or incus socket to generate it.
+	./incus-sync completion bash > incus-sync.bash
+	install -Dm644 incus-sync.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/incus-sync
 }
 
 sha512sums="

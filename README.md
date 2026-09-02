@@ -16,7 +16,7 @@ echo "https://pkg.unidoc.io/v$(cut -d. -f1,2 /etc/alpine-release)/main" \
   >> /etc/apk/repositories
 apk update
 
-apk add unidoc-incus unidoc-ndppd isms unisupply unipdf-cli age-plugin-sshagent incus-sync
+apk add unidoc-incus unidoc-ndppd isms unisupply unipdf-cli pdfdebug age-plugin-sshagent incus-sync
 ```
 
 **Supported Alpine version: always current stable, nothing else.** This

@@ -1,4 +1,5 @@
 .env
 *.rsa
 *.rsa.pub
+# local scratch/verification output, never committed
 temp/
