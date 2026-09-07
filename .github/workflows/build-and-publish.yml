@@ -42,7 +42,107 @@ jobs:
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
     steps:
+      # fetch-depth 0 (not the default shallow clone) - the next step diffs
+      # against the previous commit (push) or the PR base (pull_request) to
+      # work out which packages actually changed, and a shallow clone would
+      # not have that history to diff against.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # deploy-pages (bottom of the publish job) replaces the ENTIRE site on
+      # every run - there is no incremental publish. That means "only build
+      # what changed" is not just a build-loop optimization: if a package is
+      # skipped here, something else still has to put its files back into
+      # this run's output, or that package silently vanishes from the live
+      # repo the moment this deploys. The container step below handles that
+      # half (fetches the currently-published .apk files as a baseline
+      # before building anything); this step only decides which package
+      # names actually need a fresh `abuild -r`.
+      - name: Determine which packages need building
+        id: changed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          # Derived from main/ itself, not a literal list copy-pasted here -
+          # a hardcoded list is exactly what the old for-loop had, and it is
+          # a second place someone has to remember to update whenever a
+          # package is added or removed (the "Verify every package survived
+          # into this publish" step in the publish job needs the same set,
+          # and deriving it independently there too means both stay correct
+          # on their own, off whatever main/ actually contains, without
+          # needing to be kept in sync with each other by hand).
+          ALL_PKGS="$(cd main && for d in */; do printf "%s " "${d%/}"; done)"
+          full_rebuild=""
+          reason=""
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            full_rebuild=1
+            reason="manual workflow_dispatch run"
+          elif [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            # before is all-zeros on a brand-new branch, or points at a
+            # commit this clone cannot see (force-push rewrote history out
+            # from under it) - either way there is nothing safe to diff
+            # against, so fall back to building everything rather than
+            # guessing.
+            full_rebuild=1
+            reason="no usable base commit to diff against (new branch, force-push, or unreachable history)"
+          elif git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qx ".github/workflows/build-and-publish.yml"; then
+            # Same convention the push trigger's own paths: list already
+            # encodes (a change here is treated as "rebuild everything") -
+            # keep both in sync rather than letting the trigger imply a
+            # promise this step does not keep.
+            full_rebuild=1
+            reason="the build workflow itself changed"
+          fi
+
+          if [ -n "$full_rebuild" ]; then
+            echo "Full rebuild: $reason"
+            pkgs="$ALL_PKGS"
+          else
+            changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+            pkgs=""
+            unmatched=""
+            for f in $changed_files; do
+              case "$f" in
+                main/*/*)
+                  p="${f#main/}"
+                  p="${p%%/*}"
+                  case " $ALL_PKGS " in
+                    *" $p "*)
+                      case " $pkgs " in
+                        *" $p "*) ;;
+                        *) pkgs="$pkgs $p" ;;
+                      esac
+                      ;;
+                    *) unmatched="$unmatched $f" ;;
+                  esac
+                  ;;
+              esac
+            done
+            if [ -n "$unmatched" ]; then
+              # A changed path lives under main/ but does not belong to any
+              # known package directory (e.g. a new top-level file this
+              # list has not been taught about yet) - do not guess which
+              # package that might affect, just build everything.
+              echo "Changed path(s) under main/ do not belong to a known package, falling back to a full rebuild:$unmatched"
+              pkgs="$ALL_PKGS"
+            fi
+            pkgs="$(echo "$pkgs" | xargs)"
+            echo "Selective rebuild - packages touched by this diff: ${pkgs:-(none)}"
+          fi
+
+          echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+
+      # Read early (not just in the "move into place" step further down) so
+      # the container step below can use it to fetch this exact version's
+      # currently-published packages as a baseline before building.
+      - name: Determine the Alpine version this build targets
+        run: |
+          ALPINE_VER="$(sed -n 's/.*alpine:\([0-9.]*\) sh -c.*/\1/p' .github/workflows/build-and-publish.yml)"
+          echo "ALPINE_VER=$ALPINE_VER" >> "$GITHUB_ENV"
 
       # No job-level `container:` - actions/checkout and upload-artifact are
       # JS actions, and GitHub only bundles a Node runtime for x64 Alpine
@@ -54,11 +154,13 @@ jobs:
       - name: Build all packages in an Alpine container
         env:
           ABUILD_PRIVATE_KEY: ${{ secrets.ABUILD_PRIVATE_KEY }}
+          PKGS: ${{ steps.changed.outputs.pkgs }}
+          ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p "$PWD/repo" "$PWD/pubkey"
           docker run --rm \
             -v "$PWD:/work" -w /work \
-            -e ABUILD_PRIVATE_KEY \
+            -e ABUILD_PRIVATE_KEY -e PKGS -e ARCH -e ALPINE_VER \
             alpine:3.24 sh -c '
               set -e
               # Real root cause of the "environment: line N: syntax error"
@@ -86,7 +188,7 @@ jobs:
               # index, which left abuild-apk with nothing to read and every
               # makedepends lookup failing "no such package".
               apk update
-              apk add alpine-sdk openssl
+              apk add alpine-sdk openssl curl
               adduser -D builder
               addgroup builder abuild
 
@@ -126,6 +228,70 @@ jobs:
                 # shell-special characters, ever.
                 HOME=/home/builder PACKAGER="pr-check-throwaway" abuild-keygen -a -n
               fi
+
+              # abuild -r full-reindexes REPODEST from every .apk file
+              # physically present in it on each invocation (confirmed
+              # against abuild.in: `apk index ... ./*.apk`, not an
+              # incremental append) - so seeding this directory with the
+              # currently-published packages before building anything means
+              # a package we do NOT rebuild this run still ends up correctly
+              # listed in the fresh, re-signed index below, and still gets
+              # published. Skip this entirely for PR builds: deploy-pages
+              # never runs on a PR (see the publish job), so there is no
+              # completeness requirement to satisfy, and pulling in real,
+              # genuinely-signed packages here would fail apk index
+              # verification anyway - the trust store in this branch only
+              # has the disposable PR key in it, not the real signing key
+              # those packages were actually signed with.
+              #
+              # If the signing key itself is ever rotated, run this workflow
+              # once via workflow_dispatch right after - that forces every
+              # package to rebuild and re-sign under the new key, which is
+              # required anyway since packages fetched here under the old
+              # key would otherwise fail verification against the new one.
+              if [ -n "$ABUILD_PRIVATE_KEY" ]; then
+                mkdir -p "/work/repo/main/$ARCH"
+                (
+                  cd "/work/repo/main/$ARCH"
+                  if curl -fsSL -o APKINDEX.tar.gz "https://pkg.unidoc.io/v$ALPINE_VER/main/$ARCH/APKINDEX.tar.gz"; then
+                    tar -xzf APKINDEX.tar.gz APKINDEX
+                    # P: and V: each appear exactly once per package stanza,
+                    # in that order, before the blank-line separator - so
+                    # grepping the two fields out separately and pasting
+                    # them back together line-for-line reconstructs
+                    # pkgname-version pairs without needing an actual
+                    # stanza-aware parser. Deliberately not awk here - a
+                    # single-line-anchor regex needs a literal dollar sign,
+                    # and this whole block already lives inside one big
+                    # single-quoted shell argument where a stray quote
+                    # character has bitten this file before (see the note
+                    # above) - fewer characters that need escaping here is
+                    # worth more than using the more usual tool for the job.
+                    grep "^P:" APKINDEX | sed "s/^P://" > /tmp/baseline-p
+                    grep "^V:" APKINDEX | sed "s/^V://" > /tmp/baseline-v
+                    paste -d- /tmp/baseline-p /tmp/baseline-v |
+                      sed "s/\$/.apk/" | sort -u > /tmp/baseline-apks
+                    while read -r apkfile; do
+                      curl -fsSL -O "https://pkg.unidoc.io/v$ALPINE_VER/main/$ARCH/$apkfile" ||
+                        echo "::warning::could not fetch baseline package $apkfile - it will be missing from this publish unless it gets rebuilt this run"
+                    done < /tmp/baseline-apks
+                    rm -f APKINDEX /tmp/baseline-p /tmp/baseline-v /tmp/baseline-apks
+                    # APKINDEX.tar.gz itself is deliberately left in place,
+                    # not removed - if PKGS ends up empty (should not
+                    # happen for a push build given the trigger paths:
+                    # filter, but this is the fallback if it ever does) this
+                    # fetched index is what still gets published, instead of
+                    # ending up with packages present but no index at all.
+                    # Every abuild -r invocation below fully regenerates and
+                    # re-signs it from whatever .apk files are actually on
+                    # disk the moment at least one package does get rebuilt,
+                    # so this is never stale for the normal case either.
+                  else
+                    echo "No existing v$ALPINE_VER/main/$ARCH index to fetch (first build for this Alpine version, or nothing published there yet) - starting empty"
+                  fi
+                )
+              fi
+
               # apk index (which abuild runs after every package build)
               # verifies each .apk it indexes against the system trust
               # store - without this, it rejects our own just-built,
@@ -153,8 +319,18 @@ jobs:
               # down with it. build-status.txt is checked in a later step
               # so the job still ends up failed overall, just after
               # everything that *did* build has been uploaded.
+              # PKGS comes from the "Determine which packages need building"
+              # step (host side, before this container even starts) - only
+              # packages whose main/<pkg>/ actually changed since the last
+              # build get rebuilt here. Anything left out was already
+              # copied into place above from the currently-published
+              # baseline (push builds only - see above), so it still ends
+              # up correctly indexed and published without being rebuilt.
               failed=""
-              for pkg in unidoc-incus unidoc-ndppd isms unisupply unipdf-cli pdfdebug age-plugin-sshagent incus-sync; do
+              if [ -z "$PKGS" ]; then
+                echo "No packages to build for this run"
+              fi
+              for pkg in $PKGS; do
                 if ! su builder -c "cd /work/main/$pkg && REPODEST=/work/repo abuild -r"; then
                   echo "::error::$pkg failed to build"
                   failed="$failed $pkg"
@@ -185,12 +361,10 @@ jobs:
       # constraints are version-range checks, not an Alpine-release check.
       # Same extraction check-updates.yml's check-alpine job uses, so
       # there's one place that knows what "alpine:3.24" in this file means.
-      - name: Tag this build with the Alpine version it was built against
+      - name: Move packages into their Alpine-version-qualified directory
         run: |
-          ALPINE_VER="$(sed -n 's/.*alpine:\([0-9.]*\) sh -c.*/\1/p' .github/workflows/build-and-publish.yml)"
           mkdir -p "repo/v$ALPINE_VER"
           mv repo/main "repo/v$ALPINE_VER/main"
-          echo "ALPINE_VER=$ALPINE_VER" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -247,9 +421,10 @@ jobs:
       # apk expects <repo-root>/v$ALPINE_VER/main/<arch>/... (repo URL =
       # https://pkg.unidoc.io/v$ALPINE_VER/main), so flatten one level into
       # that shape, nested under the Alpine version (see the build job's
-      # "Tag this build..." step for why the version has to be in the
-      # path). The pubkey is NOT version-nested - one key signs every
-      # Alpine-version tree, same as it signs every package. CNAME pins the
+      # "Move packages into their Alpine-version-qualified directory" step
+      # for why the version has to be in the path). The pubkey is NOT
+      # version-nested - one key signs every Alpine-version tree, same as
+      # it signs every package. CNAME pins the
       # custom domain - required every deploy, GitHub Actions-based Pages
       # publishes don't persist it on their own the way the old
       # branch-based flow did; the Settings > Pages > Custom domain field
@@ -265,6 +440,52 @@ jobs:
           cp site/pubkey/unidoc-aports.rsa.pub out/keys/
           echo "pkg.unidoc.io" > out/CNAME
           ls -R out
+
+      # The build job only rebuilds packages that actually changed and
+      # relies on each matrix leg re-fetching everything else as a baseline
+      # before building (see "Build all packages in an Alpine container")
+      # so that this deploy still carries every package forward - but that
+      # is exactly the kind of thing that must never fail silently, since
+      # deploy-pages below replaces the ENTIRE live site in one shot. If
+      # this baseline-plus-selective-rebuild logic has a bug, the failure
+      # mode is "a package quietly stops existing for every apk client the
+      # moment this deploys" - refuse to publish rather than risk that.
+      - name: Verify every package survived into this publish
+        run: |
+          # Same derivation as the build job's "Determine which packages
+          # need building" step, kept independent on purpose rather than
+          # passed through as build output - this job already has its own
+          # checkout of the exact commit being published, so there is
+          # nothing to gain from threading it through artifacts, and one
+          # less thing that has to survive the handoff between jobs.
+          ALL_PKGS="$(cd main && for d in */; do printf "%s " "${d%/}"; done)"
+          missing=""
+          for arch in x86_64 aarch64; do
+            idx="out/v$ALPINE_VER/main/$arch/APKINDEX.tar.gz"
+            if [ ! -f "$idx" ]; then
+              echo "::error::no index at all for $arch - refusing to publish"
+              missing="$missing $arch:(no-index)"
+              continue
+            fi
+            names="$(tar -xzOf "$idx" APKINDEX | grep "^P:" | sed "s/^P://" | sort -u)"
+            for pkg in $ALL_PKGS; do
+              if ! echo "$names" | grep -qx "$pkg"; then
+                echo "::error::$pkg is missing from the $arch index"
+                missing="$missing $arch:$pkg"
+              fi
+            done
+          done
+          if [ -n "$missing" ]; then
+            echo "Refusing to publish - this would remove a package that is"
+            echo "currently live:$missing"
+            echo "This should not be possible if the baseline fetch in the"
+            echo "build job is working correctly - do not bypass this, find"
+            echo "out why a package went missing instead. A workflow_dispatch"
+            echo "run forces a full rebuild of everything from source, which"
+            echo "is the way out if the live site itself is already wrong."
+            exit 1
+          fi
+          echo "All packages present for both architectures - safe to publish"
 
       - uses: actions/upload-pages-artifact@v3
         with:
