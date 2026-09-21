@@ -95,12 +95,7 @@ jobs:
             "$apkbuild"
 
           branch="bump-$PKG-$latest"
-          git config user.name "unidoc-aports-bot"
-          git config user.email "actions@github.com"
-          git checkout -b "$branch"
-          git add "$apkbuild"
-          git commit -m "$PKG: bump to $latest"
-          git push -u origin "$branch" --force
+          .github/scripts/commit-verified.sh "$branch" "$apkbuild" "$PKG: bump to $latest"
 
           body="Automated version check: $REPO released v$latest (currently $current in this repo). pkgver and the tarball checksum are already bumped - CI will build this on the PR before it's safe to merge."
           if [ "$PKG" = "unidoc-incus" ]; then
@@ -143,12 +138,7 @@ jobs:
           sed -i "s/alpine:$current sh -c/alpine:$latest sh -c/" "$workflow"
 
           branch="bump-alpine-$latest"
-          git config user.name "unidoc-aports-bot"
-          git config user.email "actions@github.com"
-          git checkout -b "$branch"
-          git add "$workflow"
-          git commit -m "ci: bump Alpine builder to $latest"
-          git push -u origin "$branch" --force
+          .github/scripts/commit-verified.sh "$branch" "$workflow" "ci: bump Alpine builder to $latest"
 
           body="Alpine's own latest-stable branch is now v$latest (this repo's CI builder was pinned to $current). This rebuilds every package against the new release."
           body="$(printf '%s\n\n`unidoc-incus` is the one with real exposure here - it dynamically links against dbus/lxc/sqlite/cowsql/qemu and friends, so an Alpine version bump is a real ABI boundary for it, not just a version number. The static packages (unidoc-ndppd, isms, unisupply, unipdf-cli) do not care which Alpine built them. Read unidoc-incus'"'"'s build log specifically before merging, same as any other bump.' "$body")"
