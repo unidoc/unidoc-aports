@@ -137,6 +137,18 @@ jobs:
 
           sed -i "s/alpine:$current sh -c/alpine:$latest sh -c/" "$workflow"
 
+          # TODO: this commits a file under .github/workflows/, which
+          # GITHUB_TOKEN cannot write to at all - there is no
+          # "workflows" permission key to grant it (confirmed against
+          # GitHub's own workflow-syntax reference; a GitHub App's
+          # "workflows" permission is a separate, unrelated thing). This
+          # job cannot actually succeed until it's given a PAT or an App
+          # token instead - out of scope for now, since the Alpine pin
+          # this bumps is already current (alpine:3.24) and hasn't
+          # needed to run for real yet. commit-verified.sh's own
+          # scratch-branch design means a failed run here fails cleanly
+          # (no stray branch left behind), which is what makes leaving
+          # this unfixed tolerable rather than a silent trap.
           branch="bump-alpine-$latest"
           .github/scripts/commit-verified.sh "$branch" "$workflow" "ci: bump Alpine builder to $latest"
 
