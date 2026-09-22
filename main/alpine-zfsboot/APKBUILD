@@ -1,0 +1,42 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=alpine-zfsboot
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="alpine-zfsboot install-time helper (check/update an installed .EFI build)"
+url="https://github.com/unidoc/alpine-zfsboot"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/alpine-zfsboot/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Mirrors release.yml's own build-tool job (-X main.version), except
+	# that job stamps the git tag (v0.1.0) where this uses bare $pkgver
+	# (0.1.0) - which is what build.sh actually bakes into the .EFI's
+	# own alpine-zfsboot.version= from version.txt, so this build's
+	# --version agrees with what `alpine-zfsboot version <path>` reports
+	# for an installed build, where upstream's own release binary does
+	# not. Display-only either way (cmd/tool's check/update comparison
+	# path uses the .EFI's own buildstamp, never this value) - not a
+	# correctness question, just the more consistent one of two options.
+	# Plus CGO_ENABLED=0/-trimpath/-s -w, this repo's own additions for
+	# a static, dependency-free binary - alpine-zfsboot has no Justfile
+	# recipe for a plain native single-arch build to mirror instead (its
+	# own build-tool recipe always cross-compiles both arches
+	# unconditionally, the wrong fit for abuild's own per-arch build).
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o alpine-zfsboot ./cmd/tool
+}
+
+check() {
+	CGO_ENABLED=0 go test ./...
+}
+
+package() {
+	install -Dm755 alpine-zfsboot "$pkgdir"/usr/bin/alpine-zfsboot
+}
+
+sha512sums="
+3015e694dbaa1865f727a18e22f76f644048696085e439cc8c0cd726ad67b789e4f99e718da2c1756307721fb06080409389d1ca9f7893505c99945e6aac46e7  alpine-zfsboot-0.1.0.tar.gz
+"
