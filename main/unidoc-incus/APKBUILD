@@ -13,9 +13,32 @@
 # Bumping to a new stable release is manual for now (pkgver + re-verify the
 # static-build patch still applies): see README's "release cadence" section
 # for why this isn't automated yet.
+#
+# r1: incusd.initd's stop() no longer wedges the service permanently when
+# incusd has already crashed/exited on its own - it used to only attempt a
+# graceful RPC shutdown (`incusd shutdown`, requires a live daemon+socket),
+# which always failed against a dead daemon, which OpenRC then treated as
+# a failed stop and never cleared its own "started" marker - so a crashed
+# incusd looked permanently "already started" to OpenRC (`service incusd
+# start` refusing forever) with no way out short of `zap`. Confirmed our
+# incusd.initd was byte-for-byte identical to Alpine's own current
+# community/incus - a real, still-open upstream bug, not something we
+# introduced, fixed here rather than left in a package we own. stop() now
+# always finishes through a real `start-stop-daemon --stop`, same as
+# OpenRC's own non-custom default stop, so a stale/dead pidfile always
+# gets cleaned up and OpenRC's state converges with reality again -
+# `service incusd restart` self-heals a crashed daemon without ever
+# needing `zap`. incusd.confd's INCUSD_TIMEOUT doc comment, which named a
+# variable the init script never actually read, is also fixed to the real
+# name (INCUSD_STOP_TIMEOUT). See incusd.initd's own comments for the
+# full root-cause chain (verified directly against OpenRC's own source) -
+# and for why this deliberately does NOT add a post-start liveness
+# re-check: without a real supervisor, such a check can only prove
+# incusd was alive at the instant it ran, not that it stays up, so it
+# would add fixed boot latency without a real guarantee to show for it.
 pkgname=unidoc-incus
 pkgver=7.4.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
 url="https://github.com/lxc/incus"
 arch="all"
@@ -181,8 +204,8 @@ agent() {
 # apply cleanly to 7.4.0's Makefile (`patch -p1 --dry-run`, clean).
 sha512sums="
 b8bfed7a56bbdbdda9ba55e2cbe6d9aee8a405cf2248b235daa2d43aa9a0db6b09b59a531efca514ccde9907ceab3dd2f52b7c484eaa35216850acb57fb27cd2  incus-7.4.0.tar.gz
-0340f06589acc1509d6cf4c844320f23a40e8da9d6fd1aab59b7424b286bb109e81ded97e26b9a1467f64f378914f4d13f9726c48188468900ab8d88eb528d91  incusd.confd
-ca8762648020b4c933879a7a01b3f6699e9efc1dc1141228342e6619d7e9b07b13d359121767d8cd1ce6d83752ced226964138040454eebec17a3479acdbcda3  incusd.initd
+b5ae93f900110735fd1d747388d0243e99afc53f9575434249b6193d0d0b31d5a8e1559be3a29bef6c301e453db245e8caf3e380841fd268b33102b74f1a0776  incusd.confd
+66a480104ce9de205ef527cc170aaf6f7ba5254727aed55c3aacab2212431c0358b2d135196b324857cd16d310ac8c21fc3f76295c89f4872552b8feee7cf875  incusd.initd
 a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
 ac40bdeb902a95c10d814a92ebf8f94b7d03858796278258b3bac43044329790d64fbd29a90db2491964d0228f894a098fee27699a37e635295b5c4386a50028  incus-user.initd
 3cab43fa7747a9d3d265a209ad0797639e05cf421a376d0a90e8ceb7d06e9b7243366a581e9925f24ac58b6739cc2370a0babb67545e725b9da4404128ca21bd  0001-statically-build-incus-agent-and-incus-migrate.patch

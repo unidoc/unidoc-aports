@@ -27,13 +27,72 @@ start_pre() {
 	fi
 }
 
+# The graceful path (`incusd shutdown`) is an RPC over incusd's own live
+# Unix socket - it can only ever succeed while a real incusd is actually
+# behind that socket. If incusd has already died (crashed, OOM-killed,
+# ...), this RPC always fails with "connection refused", which used to
+# make stop() itself fail - and since OpenRC only clears the STARTED
+# marker on a *successful* stop, that permanently wedged the service:
+# `service incusd start` would refuse forever ("already started"),
+# `service incusd stop` would refuse forever (the same dead RPC), with
+# no way out short of `/etc/init.d/incusd zap`. OpenRC's own default,
+# non-custom stop implementation (ssd_stop, what a plain `command`+
+# `pidfile` service gets with no custom stop() at all) never had this
+# problem: it always finishes through `start-stop-daemon --stop`, which
+# explicitly treats "pidfile present but nothing there" as a successful
+# stop and cleans up the stale pidfile - our custom stop() bypassed all
+# of that by never calling start-stop-daemon at all.
+#
+# Fixed the same way: only attempt the graceful RPC shutdown once we've
+# confirmed (via --test, a pure liveness query - never sends a signal)
+# that a real incusd matching this pidfile is actually running, and
+# always finish through a real `start-stop-daemon --stop` regardless -
+# exactly like the default implementation, so OpenRC's own bookkeeping
+# converges with reality whether incusd was alive, already gone, or
+# somewhere in between (mid-crash) when stop() was called.
+#
+# `incusd shutdown`'s own exit status is deliberately not checked here -
+# start-stop-daemon's own re-check right after it is what actually
+# decides whether the stop succeeded. That's correct, not just
+# convenient: if the RPC fails/times out on a race (incusd exits on its
+# own between our --test check and the RPC call landing) but incusd is
+# provably gone by the time start-stop-daemon looks, the stop DID
+# succeed - the goal is "is anything left running", not "did the RPC
+# itself return cleanly".
+#
+# No start_post() liveness re-check here on purpose: without a real
+# supervisor watching incusd continuously - OpenRC's own supervise-daemon
+# would do that, but it requires giving up this graceful RPC stop() and
+# the `quit` command, which incusd needs - any one-shot post-start check
+# can only prove incusd was alive at the instant it ran, not that it
+# stays up. A crash a moment later looks identical to one before the
+# check ran, so a short check mostly adds fixed boot latency without a
+# real guarantee to show for it. This stop() fix is what actually
+# matters: it makes a stale STARTED state self-healing (`service incusd
+# restart` always converges to reality) regardless of when or why incusd
+# died.
 stop() {
 	ebegin "Stopping ${RC_SVCNAME}"
-	if [ "$INCUSD_FORCE_STOP" = "no" ]; then
-		$command shutdown --timeout ${INCUSD_STOP_TIMEOUT:-60}
-	elif [ "$INCUSD_FORCE_STOP" = "yes" ]; then
-		$command shutdown --force
+	if start-stop-daemon --stop --test --quiet \
+			--exec "$command" --pidfile "$pidfile"; then
+		if [ "$INCUSD_FORCE_STOP" = "yes" ]; then
+			$command shutdown --force
+		else
+			$command shutdown --timeout ${INCUSD_STOP_TIMEOUT:-60}
+		fi
+	else
+		ewarn "${RC_SVCNAME}: pidfile present but no matching process running - already stopped or crashed, cleaning up stale state"
 	fi
+	# Always finish through start-stop-daemon itself: this is what
+	# actually clears a stale pidfile and lets OpenRC's own state
+	# converge with reality, whether or not the graceful RPC above ran
+	# or succeeded. `incusd shutdown` already blocks until the process
+	# has exited, so in the normal case this just confirms that and
+	# returns instantly; --retry (INCUSD_STOP_TIMEOUT, same variable the
+	# graceful path already uses) is the safety net if it hasn't.
+	start-stop-daemon --stop --quiet --retry "$retry" \
+		--exec "$command" --pidfile "$pidfile"
+	eend $?
 }
 
 quit() {
