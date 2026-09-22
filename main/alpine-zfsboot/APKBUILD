@@ -12,18 +12,25 @@ source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/alpine-zfsboot/archiv
 builddir="$srcdir/$pkgname-$pkgver"
 
 build() {
-	# Matches release.yml's own build-tool job (ldflags, version
-	# stamping) - alpine-zfsboot has no Justfile recipe for a plain
-	# native single-arch build (its own build-tool recipe always
-	# cross-compiles both x86_64 and aarch64 unconditionally, wrong fit
-	# for abuild's per-arch native build), so mirrored by hand here
-	# instead, same as every other Go package in this repo does for its
-	# own upstream build flags.
+	# Mirrors release.yml's own build-tool job (-X main.version), except
+	# that job stamps the git tag (v0.1.0) where this uses bare $pkgver
+	# (0.1.0) - which is what build.sh actually bakes into the .EFI's
+	# own alpine-zfsboot.version= from version.txt, so this build's
+	# --version agrees with what `alpine-zfsboot version <path>` reports
+	# for an installed build, where upstream's own release binary does
+	# not. Display-only either way (cmd/tool's check/update comparison
+	# path uses the .EFI's own buildstamp, never this value) - not a
+	# correctness question, just the more consistent one of two options.
+	# Plus CGO_ENABLED=0/-trimpath/-s -w, this repo's own additions for
+	# a static, dependency-free binary - alpine-zfsboot has no Justfile
+	# recipe for a plain native single-arch build to mirror instead (its
+	# own build-tool recipe always cross-compiles both arches
+	# unconditionally, the wrong fit for abuild's own per-arch build).
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o alpine-zfsboot ./cmd/tool
 }
 
 check() {
-	CGO_ENABLED=0 go test ./cmd/tool/... ./internal/...
+	CGO_ENABLED=0 go test ./...
 }
 
 package() {
