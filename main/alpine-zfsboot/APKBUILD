@@ -1,0 +1,35 @@
+# Maintainer: UniDoc <ahall@unidoc.io>
+pkgname=alpine-zfsboot
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="alpine-zfsboot install-time helper (check/update an installed .EFI build)"
+url="https://github.com/unidoc/alpine-zfsboot"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+options="net" # go mod needs network at build time
+source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/alpine-zfsboot/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver"
+
+build() {
+	# Matches release.yml's own build-tool job (ldflags, version
+	# stamping) - alpine-zfsboot has no Justfile recipe for a plain
+	# native single-arch build (its own build-tool recipe always
+	# cross-compiles both x86_64 and aarch64 unconditionally, wrong fit
+	# for abuild's per-arch native build), so mirrored by hand here
+	# instead, same as every other Go package in this repo does for its
+	# own upstream build flags.
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$pkgver" -o alpine-zfsboot ./cmd/tool
+}
+
+check() {
+	CGO_ENABLED=0 go test ./cmd/tool/... ./internal/...
+}
+
+package() {
+	install -Dm755 alpine-zfsboot "$pkgdir"/usr/bin/alpine-zfsboot
+}
+
+sha512sums="
+3015e694dbaa1865f727a18e22f76f644048696085e439cc8c0cd726ad67b789e4f99e718da2c1756307721fb06080409389d1ca9f7893505c99945e6aac46e7  alpine-zfsboot-0.1.0.tar.gz
+"

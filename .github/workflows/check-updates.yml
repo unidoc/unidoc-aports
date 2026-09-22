@@ -57,6 +57,9 @@ jobs:
           - pkg: incus-sync
             repo: unidoc/incus-sync
             archive: incus-sync
+          - pkg: alpine-zfsboot
+            repo: unidoc/alpine-zfsboot
+            archive: alpine-zfsboot
     steps:
       - uses: actions/checkout@v4
 
