@@ -23,11 +23,8 @@ INCUSD_OPTIONS=" --group incus"
 #INCUSD_OPTIONS="${INCUSD_OPTIONS} --syslog"
 
 # Timeout (seconds) waiting for instances to stop (clean exit). Also used
-# as start-stop-daemon's own --retry escalation window if the daemon
-# hasn't actually exited by the time this timeout elapses (see stop() in
-# incusd.initd). Upstream Alpine's own confd names this INCUSD_TIMEOUT
-# in this comment, which the init script has never actually read -
-# fixed here to the variable name incusd.initd really uses.
+# as start-stop-daemon's own --retry escalation window (see stop() in
+# incusd.initd).
 #INCUSD_STOP_TIMEOUT=60
 
 # Immediately stop all instances (dirty exit, possible data loss/corruption!)
