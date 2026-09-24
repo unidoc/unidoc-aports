@@ -27,13 +27,58 @@ start_pre() {
 	fi
 }
 
+# True only if the pidfile names a live process that really is incusd.
+# start-stop-daemon cannot confirm this: once --pidfile yields a pid it
+# ignores --exec entirely (OpenRC's do_stop), so a pid recycled after a
+# crash looks exactly like a live daemon to `--test`, and would get
+# signalled by the unconditional start-stop-daemon call below. On an
+# Incus host that stray signal is unusually likely to land on a real
+# workload, not an unrelated system process: every container/VM shares
+# the host PID space. " (deleted)" covers a binary apk replaced while
+# incusd was running.
+_incusd_running() {
+	local pid exe
+	pid=$(cat "$pidfile" 2>/dev/null) || return 1
+	exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 1
+	[ "${exe% (deleted)}" = "$command" ]
+}
+
+# incusd's stop RPC only works against a live daemon, and OpenRC clears
+# its own STARTED marker only on a *successful* stop - so a crashed
+# incusd used to wedge the service permanently ("already started"
+# forever, only `zap` recovered). Fixed by checking real identity first
+# (_incusd_running above) and always finishing through start-stop-daemon
+# itself, same as OpenRC's own default stop, so a stale/dead pidfile is
+# always cleaned up and OpenRC's state converges with reality. No
+# start_post() liveness re-check: without a real supervisor, a one-shot
+# check after start can only prove incusd was alive at that instant, not
+# that it stays up.
 stop() {
+	local rc
 	ebegin "Stopping ${RC_SVCNAME}"
-	if [ "$INCUSD_FORCE_STOP" = "no" ]; then
-		$command shutdown --timeout ${INCUSD_STOP_TIMEOUT:-60}
-	elif [ "$INCUSD_FORCE_STOP" = "yes" ]; then
-		$command shutdown --force
+	if [ -e "$pidfile" ] && ! _incusd_running; then
+		ewarn "${RC_SVCNAME} is not running, clearing stale state"
+		rm -f "$pidfile"
+		eend 0
+		return
 	fi
+	if [ "$INCUSD_FORCE_STOP" = "yes" ]; then
+		$command shutdown --force
+	else
+		$command shutdown --timeout ${INCUSD_STOP_TIMEOUT:-60}
+	fi
+	rc=$?
+	# incusd answers the RPC just before it exits, so this usually just
+	# confirms that and returns instantly - if incusd is already exiting
+	# when this SIGTERMs it, incusd logs and ignores the signal, it's not
+	# a bug. Without a pidfile, start-stop-daemon matches by process name
+	# alone, so skip it there and let the RPC result stand.
+	if [ -e "$pidfile" ]; then
+		start-stop-daemon --stop --quiet --retry "$retry" \
+			--exec "$command" --pidfile "$pidfile"
+		rc=$?
+	fi
+	eend $rc "Failed to stop ${RC_SVCNAME}"
 }
 
 quit() {

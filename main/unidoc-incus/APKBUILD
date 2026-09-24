@@ -13,9 +13,18 @@
 # Bumping to a new stable release is manual for now (pkgver + re-verify the
 # static-build patch still applies): see README's "release cadence" section
 # for why this isn't automated yet.
+#
+# r1: incusd.initd's stop() no longer wedges the service permanently when
+# incusd has already crashed - it used to only attempt a graceful RPC
+# shutdown, which fails against a dead daemon and left OpenRC's "started"
+# marker stuck (only `zap` recovered). See incusd.initd's own comments
+# for the root-cause chain and fix (verified against OpenRC's own
+# source). incusd.confd's INCUSD_TIMEOUT doc comment, which named a
+# variable the init script never actually read, is also fixed to the
+# real name (INCUSD_STOP_TIMEOUT).
 pkgname=unidoc-incus
 pkgver=7.4.0
-pkgrel=0
+pkgrel=1
 pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
 url="https://github.com/lxc/incus"
 arch="all"
@@ -181,8 +190,8 @@ agent() {
 # apply cleanly to 7.4.0's Makefile (`patch -p1 --dry-run`, clean).
 sha512sums="
 b8bfed7a56bbdbdda9ba55e2cbe6d9aee8a405cf2248b235daa2d43aa9a0db6b09b59a531efca514ccde9907ceab3dd2f52b7c484eaa35216850acb57fb27cd2  incus-7.4.0.tar.gz
-0340f06589acc1509d6cf4c844320f23a40e8da9d6fd1aab59b7424b286bb109e81ded97e26b9a1467f64f378914f4d13f9726c48188468900ab8d88eb528d91  incusd.confd
-ca8762648020b4c933879a7a01b3f6699e9efc1dc1141228342e6619d7e9b07b13d359121767d8cd1ce6d83752ced226964138040454eebec17a3479acdbcda3  incusd.initd
+052c3f1b19e2e125237a34ee3d8f2efeb8a6821f93708d323c0ec487850fc1940844d5a8216981ee06dc756d033c23d0f8948e96de3c431af83fd08bd1f068b5  incusd.confd
+2df3d3d9915e0d8afa5316f2560045452d57b4519f6a7c5169a761447cf45fe1f2ef282c4e65507b93d4a0e9aba9e2bc3c4652627ee602dc4a5b4db61e9cc0a1  incusd.initd
 a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
 ac40bdeb902a95c10d814a92ebf8f94b7d03858796278258b3bac43044329790d64fbd29a90db2491964d0228f894a098fee27699a37e635295b5c4386a50028  incus-user.initd
 3cab43fa7747a9d3d265a209ad0797639e05cf421a376d0a90e8ceb7d06e9b7243366a581e9925f24ac58b6739cc2370a0babb67545e725b9da4404128ca21bd  0001-statically-build-incus-agent-and-incus-migrate.patch
