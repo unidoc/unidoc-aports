@@ -1,9 +1,15 @@
 #!/sbin/openrc-run
 
-# Mirrors upstream's own contrib/freebsd/rc.d/isms - same env-file-driven
-# config, same required vars. See /etc/conf.d/isms: at minimum DATABASE_URL,
-# ISMS_DATA_DIR, ISMS_STORAGE_BACKEND and ISMS_TEMPLATE_PATH must be set;
-# isms aborts at startup otherwise.
+# App config (DATABASE_URL, ISMS_DATA_DIR, ...) lives in
+# /etc/isms/server.env, plain KEY=VALUE, loaded NATIVELY by isms
+# itself via ISMS_SERVER_ENV (see cmd/isms/main.go upstream) - this
+# script never sources it, and it never needs to be shell-exported.
+# /etc/conf.d/isms only carries OpenRC-level knobs (ISMS_ARGS, an
+# ISMS_SERVER_ENV override) - same separation upstream's own FreeBSD
+# rc.d script (contrib/freebsd/rc.d/isms) and the Debian packaging
+# already use, just pointed at isms's own built-in loader instead of
+# the manual `set -a; . file; set +a` FreeBSD's rc.d has to do by hand
+# (daemon(8) has no equivalent of ISMS_SERVER_ENV to lean on).
 command="/usr/bin/isms"
 command_args="server serve ${ISMS_ARGS}"
 command_user="isms:isms"
@@ -12,6 +18,8 @@ pidfile="/run/isms.pid"
 output_log="/var/log/isms/isms.log"
 error_log="/var/log/isms/isms.log"
 
+export ISMS_SERVER_ENV="${ISMS_SERVER_ENV:-/etc/isms/server.env}"
+
 depend() {
 	need net
 	use postgresql
@@ -19,5 +27,25 @@ depend() {
 
 start_pre() {
 	checkpath --directory --owner isms:isms --mode 0750 /var/log/isms
-	checkpath --directory --owner isms:isms --mode 0750 "${ISMS_DATA_DIR:-/var/lib/isms}"
+
+	if [ ! -r "$ISMS_SERVER_ENV" ]; then
+		eerror "$ISMS_SERVER_ENV is not readable - the isms package ships a template there; fill it in, or point ISMS_SERVER_ENV (in /etc/conf.d/isms) at a different file"
+		return 1
+	fi
+	# isms:isms (the user this service actually runs as, see
+	# command_user above) needs read access to its own config -
+	# enforced on every start, not just at package-install time, so a
+	# manual `chmod`/package upgrade that resets this gets fixed
+	# automatically instead of failing confusingly at daemon startup.
+	checkpath --file --owner isms:isms --mode 0600 "$ISMS_SERVER_ENV"
+
+	# ISMS_DATA_DIR itself now lives in server.env, not in this
+	# script's own shell environment - read it out directly (same
+	# KEY=VALUE shape loadEnvFile() itself parses) just for this one
+	# checkpath call. isms does not create this directory itself - see
+	# server.env's own comment on it.
+	data_dir=$(sed -n 's/^ISMS_DATA_DIR=//p' "$ISMS_SERVER_ENV" | tail -n1)
+	data_dir=${data_dir%\"}; data_dir=${data_dir#\"}
+	data_dir=${data_dir%\'}; data_dir=${data_dir#\'}
+	checkpath --directory --owner isms:isms --mode 0750 "${data_dir:-/var/lib/isms}"
 }
