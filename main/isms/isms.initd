@@ -82,4 +82,33 @@ start_pre() {
 	# server.env's own comment) - see server.env's own comment on it.
 	data_dir=$(_server_env_get ISMS_DATA_DIR)
 	checkpath --directory --owner isms:isms --mode 0750 "${data_dir:-/var/lib/isms}"
+
+	# /var/lib/isms/private - the SSH signing key's own home. 0700,
+	# tighter than ISMS_DATA_DIR's own 0750 - this one only ever holds
+	# a private key.
+	checkpath --directory --owner isms:isms --mode 0700 "${data_dir:-/var/lib/isms}/private"
+
+	# ISMS_SIGNING_KEY: generated once, on the first start that finds
+	# the key file missing - same "generate once, never touch again"
+	# shape as ISMS_SECRET above, but gated on a real ISMS_SIGNING_EMAIL
+	# first: every commit isms writes gets signed AS this identity (see
+	# server.env's own comment), and unlike ISMS_SECRET (pure random
+	# bytes) a real email address is a human decision, not something to
+	# default. Refuses to start rather than silently generating a key
+	# tied to the shipped CHANGEME placeholder - the case pattern below
+	# matches it case-insensitively, same as a plain `grep -i changeme`
+	# would, just without shelling out to grep for one string compare.
+	signing_key=$(_server_env_get ISMS_SIGNING_KEY)
+	if [ -n "$signing_key" ] && [ ! -e "$signing_key" ]; then
+		signing_email=$(_server_env_get ISMS_SIGNING_EMAIL)
+		case "$signing_email" in
+			"" | *[Cc][Hh][Aa][Nn][Gg][Ee][Mm][Ee]*)
+				eerror "ISMS_SIGNING_EMAIL in $ISMS_SERVER_ENV is still unset or the shipped CHANGEME placeholder - set it to a real address before this can generate $signing_key"
+				return 1
+				;;
+		esac
+		einfo "ISMS_SIGNING_KEY ($signing_key) does not exist yet - generating it (first start only)"
+		ssh-keygen -q -t ed25519 -N "" -C "$signing_email" -f "$signing_key" </dev/null
+		checkpath --file --owner isms:isms --mode 0600 "$signing_key"
+	fi
 }
