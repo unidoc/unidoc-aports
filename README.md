@@ -79,6 +79,15 @@ and nobody could tell whose incus they're actually running. Instead:
 - KVM/VM support is bundled in by default (no separate `-vm` subpackage),
   but qemu/ovmf/aavmf are still `depends=`, never vendored - that stays
   Alpine's own package, patched on Alpine's own schedule.
+- **ZFS-first, ZFS-only, by design** - every UniDoc host runs Incus's own
+  storage pool on ZFS (see `alpine-zfsboot`, this same org's own ZFS boot
+  manager - the whole stack is ZFS end to end), never dir/btrfs/lvm. This
+  is not a hypothetical someone might one day rely on differently:
+  `incusd.initd`'s own `depend()` hard-`need`s `zfs-mount` (not a soft
+  `use`) specifically because a ZFS-backed `/var` not being mounted yet is
+  a crash for this package, not a degraded-but-working state - tried and
+  tested in real production on ZFS, not designed for non-ZFS storage
+  backends as a fallback.
 
 ### Release cadence
 
@@ -145,7 +154,7 @@ to be set once by hand; nothing in `main/**` triggers them.
 
 | Package | Source | Language | Status |
 |---|---|---|---|
-| `unidoc-incus` | [lxc/incus](https://github.com/lxc/incus) | Go + cgo (cowsql/raft) | scaffolded, **not yet build-tested** - incus's build is the most complex thing here, expect at least one CI debugging round |
+| `unidoc-incus` | [lxc/incus](https://github.com/lxc/incus) | Go + cgo (cowsql/raft) | **live in production** - real ZFS-backed containers/VMs running on it; ZFS-first/ZFS-only by design, see this file's own `unidoc-incus` section above |
 | `unidoc-ndppd` | [unidoc/unidoc-ndppd](https://github.com/unidoc/unidoc-ndppd) | C | scaffolded |
 | `isms` | [unidoc/isms](https://github.com/unidoc/isms) | Go + Vue (embedded) | scaffolded |
 | `unisupply` | [unidoc/unisupply](https://github.com/unidoc/unisupply) | Go | scaffolded |

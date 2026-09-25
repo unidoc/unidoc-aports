@@ -22,9 +22,25 @@
 # source). incusd.confd's INCUSD_TIMEOUT doc comment, which named a
 # variable the init script never actually read, is also fixed to the
 # real name (INCUSD_STOP_TIMEOUT).
+#
+# r2: ZFS-first, ZFS-only, by design - every UniDoc host runs Incus's own
+# storage pool on ZFS (see alpine-zfsboot, this same org's own ZFS boot
+# manager - the whole stack is ZFS end to end), never dir/btrfs/lvm.
+# `zfs` (the real Alpine main/zfs package - userspace `zfs`/`zpool`/...,
+# confirmed against the real APKINDEX: v2.4.4-r0, same version already
+# running in production - NOT `zfs-lts`/`zfs-virt`, which are the kernel-
+# module builds and belong to whichever kernel flavor the HOST picked,
+# not something this package should force) is now a real `depends=`
+# instead of something only present by coincidence via alpine-zfsboot's
+# own install. incusd.initd's own depend() also now hard-`need`s
+# zfs-mount, not a soft `use` - real-hardware-found: incusd starting
+# before zfs-mount had actually mounted the ZFS dataset backing /var (so
+# /var/lib/incus's real data) crashed outright, every single boot, not a
+# degraded-but-working race. See incusd.initd's own comment for the full
+# chain.
 pkgname=unidoc-incus
 pkgver=7.5.1
-pkgrel=0
+pkgrel=1
 pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
 url="https://github.com/lxc/incus"
 arch="all"
@@ -43,6 +59,7 @@ depends="acl
 	squashfs-tools
 	shadow-subids
 	tar
+	zfs
 	xz
 	py3-lxc
 	jq
@@ -63,7 +80,8 @@ case "$CARCH" in
 	x86_64)  depends="$depends ovmf qemu-system-x86_64>=8.2" ;;
 	aarch64) depends="$depends aavmf qemu-system-aarch64>=8.2" ;;
 esac
-# incus 7.4.0's go.mod wants go>=1.26.7; Alpine 3.24 packages 1.26.3. Not
+# incus's go.mod wants go>=1.26.7 (re-check this at each pkgver bump);
+# Alpine 3.24 packages 1.26.3. Not
 # pinning a higher version in makedepends below since Alpine doesn't have
 # one to pin to - relying on Go's own GOTOOLCHAIN=auto to fetch 1.26.7 over
 # the network at build time (options="net" below covers this too). Not
@@ -103,11 +121,11 @@ source="incus-$pkgver.tar.gz::https://github.com/lxc/incus/archive/refs/tags/v$p
 	"
 builddir="$srcdir/incus-$pkgver"
 
-# Verified directly against the 7.4.0 tarball's cmd/ tree, not carried over
-# unmodified from Alpine's 7.0.1-targeted list: lxd-to-incus was removed
-# upstream between 7.0.1 and 7.4.0 (no trace, not renamed), and mini-oidc/
-# sysinfo/tls2jwt are test fixtures under test/ that `go install ./...`
-# happens to build but that don't belong installed as real /usr/bin tools.
+# Re-check this list against the tarball's own `ls cmd/` at each pkgver
+# bump, don't just carry it forward - upstream has added/removed tools
+# before. mini-oidc/sysinfo/tls2jwt are test fixtures under test/ that
+# `go install ./...` happens to build but that don't belong installed
+# as real /usr/bin tools.
 _tools="fuidshift
 	generate-config
 	generate-database
@@ -122,8 +140,9 @@ export GOFLAGS="$GOFLAGS -tags=libsqlite3"
 export GOPATH="$srcdir"
 # Alpine's go package defaults GOTOOLCHAIN=local (most distros do, so a
 # build never silently fetches and runs a different Go version) - that
-# blocks incus 7.4.0's go.mod (requires go>=1.26.7, Alpine 3.24 packages
-# 1.26.3) outright instead of the network-fetch fallback assumed above.
+# blocks incus's own go.mod requirement (currently go>=1.26.7, Alpine
+# 3.24 packages 1.26.3) outright instead of the network-fetch fallback
+# assumed above.
 # options="net" makes the fetch itself permitted; this makes it happen.
 export GOTOOLCHAIN=auto
 
@@ -142,11 +161,12 @@ build() {
 
 check() {
 	export CGO_LDFLAGS="$LDFLAGS -lintl"
-	# Skip list carried over from Alpine's 7.0.1-targeted APKBUILD, not
-	# re-verified against 7.4.0 - the named tests still exist as of this
-	# tarball, but three minor releases may have added new flaky ones this
-	# list doesn't cover. Watch the first real CI run's check() output.
-	go test -v -skip "TestCluster_*|TestIntegration_UnixSocket|TestContainerTestSuite_*|TestDotGo|TestParse|TestPackages|TestConvertNetworkConfig|TestSnapshotCommon|TestHttpRequest" ./...
+	# go test -skip is an unanchored regexp, not a glob: TestParse below
+	# matches three tests across two packages (also catches TestParse_Error
+	# as a substring), not just one - re-check each name still exists and
+	# matches only what's intended at each pkgver bump, don't just carry
+	# the list forward.
+	go test -v -skip "TestCluster_*|TestIntegration_UnixSocket|TestContainerTestSuite_*|TestDotGo|TestParse|TestConvertNetworkConfig|TestSnapshotCommon|TestHttpRequest" ./...
 }
 
 package() {
@@ -182,16 +202,19 @@ agent() {
 	amove etc/init.d/incus-agent
 }
 
-# Real, verified checksums for incus-7.4.0.tar.gz and the OpenRC files
-# copied byte-for-byte from Alpine's aports (same content -> same hash).
+# incusd.confd, incus-agent.initd, and incus-user.initd are still
+# untouched, byte-for-byte copies from Alpine's own aports (same content
+# -> same hash); incusd.initd has since diverged (r1's stop() fix, r2's
+# ZFS-only depend() fix - see this file's own top comment for both) and
+# its checksum here is this package's own, not Alpine's.
 # unidoc-incus.pre-install is not in `source=` (it's a local install
 # script, not a fetched one) so it doesn't get a checksum entry here.
-# The static-build patch (cut against 7.0.x LTS) has been confirmed to
-# apply cleanly to 7.4.0's Makefile (`patch -p1 --dry-run`, clean).
+# Re-check the static-build patch (cut against 7.0.x LTS) still applies
+# cleanly (`patch -p1 --dry-run`) at each pkgver bump.
 sha512sums="
 1407ea180a47e8f27ef3de4092b65acfbb2d4bdf276848d5a2b5e24b2f985db2e826bffdbfec5b306ad2f9c03d93ed53139780b7ad9b60dfc93c7bf229e264c5  incus-7.5.1.tar.gz
 052c3f1b19e2e125237a34ee3d8f2efeb8a6821f93708d323c0ec487850fc1940844d5a8216981ee06dc756d033c23d0f8948e96de3c431af83fd08bd1f068b5  incusd.confd
-2df3d3d9915e0d8afa5316f2560045452d57b4519f6a7c5169a761447cf45fe1f2ef282c4e65507b93d4a0e9aba9e2bc3c4652627ee602dc4a5b4db61e9cc0a1  incusd.initd
+96726e912556bcf19efe30689912f982d20ec422ec0d972d70481a254bf2880c0a686039db5741e52c15a7012fb1cf0b16b972fa10c959ee5a33dbf7eeb5a718  incusd.initd
 a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
 ac40bdeb902a95c10d814a92ebf8f94b7d03858796278258b3bac43044329790d64fbd29a90db2491964d0228f894a098fee27699a37e635295b5c4386a50028  incus-user.initd
 3cab43fa7747a9d3d265a209ad0797639e05cf421a376d0a90e8ceb7d06e9b7243366a581e9925f24ac58b6739cc2370a0babb67545e725b9da4404128ca21bd  0001-statically-build-incus-agent-and-incus-migrate.patch
