@@ -23,8 +23,8 @@
 # variable the init script never actually read, is also fixed to the
 # real name (INCUSD_STOP_TIMEOUT).
 pkgname=unidoc-incus
-pkgver=7.4.0
-pkgrel=1
+pkgver=7.5.1
+pkgrel=0
 pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
 url="https://github.com/lxc/incus"
 arch="all"
@@ -189,7 +189,7 @@ agent() {
 # The static-build patch (cut against 7.0.x LTS) has been confirmed to
 # apply cleanly to 7.4.0's Makefile (`patch -p1 --dry-run`, clean).
 sha512sums="
-b8bfed7a56bbdbdda9ba55e2cbe6d9aee8a405cf2248b235daa2d43aa9a0db6b09b59a531efca514ccde9907ceab3dd2f52b7c484eaa35216850acb57fb27cd2  incus-7.4.0.tar.gz
+1407ea180a47e8f27ef3de4092b65acfbb2d4bdf276848d5a2b5e24b2f985db2e826bffdbfec5b306ad2f9c03d93ed53139780b7ad9b60dfc93c7bf229e264c5  incus-7.5.1.tar.gz
 052c3f1b19e2e125237a34ee3d8f2efeb8a6821f93708d323c0ec487850fc1940844d5a8216981ee06dc756d033c23d0f8948e96de3c431af83fd08bd1f068b5  incusd.confd
 2df3d3d9915e0d8afa5316f2560045452d57b4519f6a7c5169a761447cf45fe1f2ef282c4e65507b93d4a0e9aba9e2bc3c4652627ee602dc4a5b4db61e9cc0a1  incusd.initd
 a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
