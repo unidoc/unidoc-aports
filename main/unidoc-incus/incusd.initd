@@ -11,7 +11,16 @@ description_quit="Daemon quits and leaves the instances running"
 : ${INCUSD_FORCE_STOP:="no"}
 
 depend() {
-	need net cgroups dbus
+	# unidoc-incus is ZFS-first/ZFS-only - zfs-mount is a hard requirement
+	# (need), not a soft ordering hint (use lxcfs below): incus's own
+	# storage pool lives on a real (non-legacy-mountpoint) ZFS dataset
+	# under /var (zroot/var, in turn holding /var/lib/incus's real data),
+	# so incusd starting before zfs-mount has actually mounted it is not
+	# "incus works a little worse" - it crashes outright, racing against
+	# whatever OpenRC happens to schedule first. need also fails loudly
+	# if zfs-mount is missing/disabled, instead of silently starting
+	# against an unmounted /var and crashing anyway.
+	need net cgroups dbus zfs-mount
 	use lxcfs
 	after firewall
 }
