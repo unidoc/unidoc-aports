@@ -25,6 +25,19 @@ depend() {
 	use postgresql
 }
 
+# _server_env_get KEY - reads one KEY=VALUE line out of $ISMS_SERVER_ENV
+# (last matching line wins, same order os.Setenv gives loadEnvFile() on
+# a repeated key), stripping one matching pair of surrounding quotes -
+# same shape loadEnvFile() itself parses. The one place this file reads
+# a value out of server.env, so ISMS_DATA_DIR/ISMS_SECRET below share it
+# instead of each reimplementing the same sed+quote-strip.
+_server_env_get() {
+	v=$(sed -n "s/^$1=//p" "$ISMS_SERVER_ENV" | tail -n1)
+	v=${v%\"}; v=${v#\"}
+	v=${v%\'}; v=${v#\'}
+	printf '%s' "$v"
+}
+
 start_pre() {
 	checkpath --directory --owner isms:isms --mode 0750 /var/log/isms
 
@@ -32,20 +45,41 @@ start_pre() {
 		eerror "$ISMS_SERVER_ENV is not readable - the isms package ships a template there; fill it in, or point ISMS_SERVER_ENV (in /etc/conf.d/isms) at a different file"
 		return 1
 	fi
+
+	# ISMS_SECRET: generated once, on the first start that finds it
+	# genuinely empty, and never touched again after that - see
+	# server.env's own comment on why this must never silently
+	# regenerate (it's the JWT signing key AND the key that OIDC
+	# client secrets are encrypted at rest with - rotating it
+	# invalidates every live session and makes every already-encrypted
+	# OIDC secret undecryptable). Reads straight from /dev/urandom via
+	# od rather than shelling out to openssl - both are already part
+	# of this image's own base tools, no extra depends= needed just
+	# for this.
+	if [ -z "$(_server_env_get ISMS_SECRET)" ]; then
+		einfo "ISMS_SECRET is empty in $ISMS_SERVER_ENV - generating one (first start only)"
+		secret=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+		if grep -q '^ISMS_SECRET=' "$ISMS_SERVER_ENV"; then
+			sed "s|^ISMS_SECRET=.*|ISMS_SECRET=$secret|" "$ISMS_SERVER_ENV" > "$ISMS_SERVER_ENV.tmp" \
+				&& mv "$ISMS_SERVER_ENV.tmp" "$ISMS_SERVER_ENV"
+		else
+			printf 'ISMS_SECRET=%s\n' "$secret" >> "$ISMS_SERVER_ENV"
+		fi
+	fi
+
 	# isms:isms (the user this service actually runs as, see
 	# command_user above) needs read access to its own config -
 	# enforced on every start, not just at package-install time, so a
-	# manual `chmod`/package upgrade that resets this gets fixed
+	# manual `chmod`/package upgrade (or the ISMS_SECRET generation
+	# above, which runs as root) that resets this gets fixed
 	# automatically instead of failing confusingly at daemon startup.
 	checkpath --file --owner isms:isms --mode 0600 "$ISMS_SERVER_ENV"
 
-	# ISMS_DATA_DIR itself now lives in server.env, not in this
-	# script's own shell environment - read it out directly (same
-	# KEY=VALUE shape loadEnvFile() itself parses) just for this one
-	# checkpath call. isms does not create this directory itself - see
-	# server.env's own comment on it.
-	data_dir=$(sed -n 's/^ISMS_DATA_DIR=//p' "$ISMS_SERVER_ENV" | tail -n1)
-	data_dir=${data_dir%\"}; data_dir=${data_dir#\"}
-	data_dir=${data_dir%\'}; data_dir=${data_dir#\'}
+	# ISMS_DATA_DIR itself lives in server.env, not in this script's
+	# own shell environment - read it out directly, same as
+	# ISMS_SECRET above. isms does not create this top-level directory
+	# itself (it DOES create repos/ and orgs/ under it on demand - see
+	# server.env's own comment) - see server.env's own comment on it.
+	data_dir=$(_server_env_get ISMS_DATA_DIR)
 	checkpath --directory --owner isms:isms --mode 0750 "${data_dir:-/var/lib/isms}"
 }
