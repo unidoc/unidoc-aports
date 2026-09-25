@@ -12,3 +12,11 @@
 # override (matches isms.initd's own default-with-override pattern in
 # /etc/conf.d/isms).
 export ISMS_SERVER_ENV="${ISMS_SERVER_ENV:-/etc/isms/server.env}"
+
+# Only reaches a LOGIN shell (a Fable-model audit flagged this real gap
+# in a fleet context): `incus exec <container> -- isms server migrate`
+# execs directly, with no login/profile sequence at all, so this file
+# never runs there - the exact "DATABASE_URL is required" failure this
+# whole file exists to prevent, reproduced through a different door. For
+# a non-login exec, pass --env explicitly instead:
+#   incus exec <container> -- isms server migrate --env /etc/isms/server.env

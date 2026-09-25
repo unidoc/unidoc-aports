@@ -10,13 +10,35 @@
 # already use, just pointed at isms's own built-in loader instead of
 # the manual `set -a; . file; set +a` FreeBSD's rc.d has to do by hand
 # (daemon(8) has no equivalent of ISMS_SERVER_ENV to lean on).
+#
+# supervise-daemon, not command_background - a Fable-model audit (real
+# fleet-scale review, hundreds of Incus instances) found `isms server
+# serve` runs in the foreground by default (confirmed: no daemonizing
+# code in cmd/isms/serve.go), so command_background's own
+# start-stop-daemon fork-and-forget left any post-fork failure (a
+# missing ISMS_BASE_URL, a slow Postgres at container boot) completely
+# invisible - OpenRC reports "started" the instant the fork succeeds,
+# then the process exits and nothing ever notices or restarts it.
+# supervise-daemon actually supervises: it respawns on crash
+# (respawn_delay/respawn_max below), and "started" only means the
+# process is genuinely still running.
+supervisor=supervise-daemon
 command="/usr/bin/isms"
 command_args="server serve ${ISMS_ARGS}"
 command_user="isms:isms"
-command_background="true"
 pidfile="/run/isms.pid"
 output_log="/var/log/isms/isms.log"
 error_log="/var/log/isms/isms.log"
+# 5s between respawns (not 0 - hundreds of instances hitting a
+# transient Postgres outage at the same moment must not all hammer it
+# in a tight crash loop); respawn_max=0 is supervise-daemon's own
+# "never give up" value (real source-confirmed: src/supervise-daemon.c
+# only gives up when respawn_max > 0 AND exceeded) - an outage lasting
+# longer than a few respawns must not leave the service permanently
+# down until someone notices and manually restarts it on every single
+# affected instance.
+respawn_delay=5
+respawn_max=0
 
 export ISMS_SERVER_ENV="${ISMS_SERVER_ENV:-/etc/isms/server.env}"
 
@@ -28,23 +50,57 @@ depend() {
 # _server_env_get KEY - reads one KEY=VALUE line out of $ISMS_SERVER_ENV
 # (last matching line wins, same order os.Setenv gives loadEnvFile() on
 # a repeated key), stripping one matching pair of surrounding quotes -
-# same shape loadEnvFile() itself parses. The one place this file reads
-# a value out of server.env, so ISMS_DATA_DIR/ISMS_SECRET below share it
-# instead of each reimplementing the same sed+quote-strip.
+# same shape loadEnvFile() itself parses. Tolerates spaces around "="
+# (loadEnvFile() does too, via strings.Cut+TrimSpace) - without this, a
+# hand-edited "ISMS_SECRET = x" line would look empty to THIS script
+# but not to isms itself, and start_pre would then append a SECOND,
+# freshly-generated ISMS_SECRET= line that silently wins on the next
+# load (last line wins) - replacing a real value nobody meant to
+# replace. The one place this file reads a value out of server.env, so
+# ISMS_DATA_DIR/ISMS_SECRET/ISMS_SIGNING_KEY below share it instead of
+# each reimplementing the same sed+quote-strip.
 _server_env_get() {
-	v=$(sed -n "s/^$1=//p" "$ISMS_SERVER_ENV" | tail -n1)
+	v=$(sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$ISMS_SERVER_ENV" | tail -n1)
 	v=${v%\"}; v=${v#\"}
 	v=${v%\'}; v=${v#\'}
 	printf '%s' "$v"
 }
 
 start_pre() {
+	# Every write this function makes to $ISMS_SERVER_ENV (ISMS_SECRET/
+	# ISMS_SIGNING_KEY generation below) happens as root, before the
+	# final checkpath narrows the file to 0600 - without a tight umask
+	# first, the sed-to-tempfile-then-mv path below would briefly leave
+	# a copy of the file (freshly-generated secrets and all) at
+	# whatever the default umask allows (0644 on most systems).
+	umask 077
+
 	checkpath --directory --owner isms:isms --mode 0750 /var/log/isms
 
 	if [ ! -r "$ISMS_SERVER_ENV" ]; then
 		eerror "$ISMS_SERVER_ENV is not readable - the isms package ships a template there; fill it in, or point ISMS_SERVER_ENV (in /etc/conf.d/isms) at a different file"
 		return 1
 	fi
+
+	# A locally-modified /etc file (this one certainly is, once
+	# ISMS_SECRET below is generated) is NEVER overwritten by `apk
+	# upgrade` - apk keeps the disk copy and drops the package's own
+	# new version alongside as <path>.apk-new instead (real, confirmed
+	# behavior - see apk-tools' own src/database.c apk_db_migrate_files
+	# and the built-in "+etc" protected_paths entry). That is exactly
+	# right for not clobbering live secrets, but it also means a new
+	# release's added config (e.g. r2's own ISMS_SIGNING_KEY block)
+	# lands in a file this running instance never reads - upgrading the
+	# package does NOT upgrade an existing instance's actual
+	# configuration. Warn loudly on every start instead of leaving that
+	# silent - across a real fleet this is the difference between
+	# "every instance quietly drifted out of policy" and "every
+	# instance's own log says so until an admin merges it in by hand".
+	for f in "$ISMS_SERVER_ENV" /etc/conf.d/isms; do
+		if [ -e "$f.apk-new" ]; then
+			ewarn "$f.apk-new exists - a package upgrade shipped new config that this file does not have yet (apk never auto-merges a locally-modified /etc file). Review and merge it by hand: diff $f.apk-new $f"
+		fi
+	done
 
 	# ISMS_SECRET: generated once, on the first start that finds it
 	# genuinely empty, and never touched again after that - see
@@ -59,8 +115,8 @@ start_pre() {
 	if [ -z "$(_server_env_get ISMS_SECRET)" ]; then
 		einfo "ISMS_SECRET is empty in $ISMS_SERVER_ENV - generating one (first start only)"
 		secret=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-		if grep -q '^ISMS_SECRET=' "$ISMS_SERVER_ENV"; then
-			sed "s|^ISMS_SECRET=.*|ISMS_SECRET=$secret|" "$ISMS_SERVER_ENV" > "$ISMS_SERVER_ENV.tmp" \
+		if grep -q '^ISMS_SECRET[[:space:]]*=' "$ISMS_SERVER_ENV"; then
+			sed "s|^ISMS_SECRET[[:space:]]*=.*|ISMS_SECRET=$secret|" "$ISMS_SERVER_ENV" > "$ISMS_SERVER_ENV.tmp" \
 				&& mv "$ISMS_SERVER_ENV.tmp" "$ISMS_SERVER_ENV"
 		else
 			printf 'ISMS_SECRET=%s\n' "$secret" >> "$ISMS_SERVER_ENV"
@@ -110,5 +166,17 @@ start_pre() {
 		einfo "ISMS_SIGNING_KEY ($signing_key) does not exist yet - generating it (first start only)"
 		ssh-keygen -q -t ed25519 -N "" -C "$signing_email" -f "$signing_key" </dev/null
 		checkpath --file --owner isms:isms --mode 0600 "$signing_key"
+	elif [ -n "$signing_key" ]; then
+		# The key already exists - the CHANGEME gate above only runs at
+		# generation time, so it can't catch ISMS_SIGNING_EMAIL being
+		# reset back to the placeholder afterward. isms itself would
+		# just sign every commit with that bogus identity, silently
+		# (internal/isms/api/server.go falls back to it verbatim) - warn
+		# rather than let that pass unnoticed.
+		case "$(_server_env_get ISMS_SIGNING_EMAIL)" in
+			"" | *[Cc][Hh][Aa][Nn][Gg][Ee][Mm][Ee]*)
+				ewarn "ISMS_SIGNING_EMAIL in $ISMS_SERVER_ENV is still unset or the shipped CHANGEME placeholder, but $signing_key already exists - commits will be signed with that placeholder identity"
+				;;
+		esac
 	fi
 }
