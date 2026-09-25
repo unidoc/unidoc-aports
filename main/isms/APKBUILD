@@ -8,28 +8,64 @@
 # convention (a dedicated server.env), so this also drops the manual
 # per-var shell `export` gymnastics conf.d needed. See isms.confd's and
 # isms.initd's own header comments for the full story.
+#
+# r2: four real gaps found deploying the first server.env-based install
+# (demo.isms.sh) - see isms.server.env's and isms.initd's own comments
+# for each:
+#   - ISMS_SECRET (required - server.go log.Fatal's without it) was
+#     missing from server.env entirely; isms.initd's start_pre() now
+#     generates and persists a real one on first start, only ever if the
+#     line is genuinely empty.
+#   - ISMS_TEMPLATE_PATH's own comment now says outright that it must be
+#     a full working-tree clone, never --bare (confirmed against
+#     internal/isms/scaffold/templates.go's plain os.ReadDir/os.ReadFile
+#     reads) - repos/ and orgs/ under ISMS_DATA_DIR need no packaging
+#     help at all, isms itself os.MkdirAll's both on demand.
+#   - /etc/profile.d/isms.sh exports ISMS_SERVER_ENV for interactive
+#     shells too - isms.initd only ever exported it for the daemon's own
+#     process, so `isms server migrate` run by hand had no way to find
+#     server.env on its own.
+#   - ISMS_SIGNING_KEY/NAME/EMAIL are real server.env config now too
+#     (moved out of the commented "optional" block) - UniDoc policy is
+#     every install signs its commits. isms.initd's start_pre() now
+#     generates the actual key itself (`ssh-keygen -t ed25519`, same
+#     "once on first start" shape as ISMS_SECRET) - but refuses to start
+#     rather than generate one if ISMS_SIGNING_EMAIL is still empty or
+#     the shipped CHANGEME placeholder, since that part IS a human
+#     decision. New openssh-keygen depends= for this (confirmed as a
+#     real, separate Alpine subpackage via a live `apk search openssh`).
 pkgname=isms
 pkgver=0.8.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Open-source ISMS platform - git-native documents, PostgreSQL collaboration, single binary"
 url="https://github.com/unidoc/isms"
 arch="all"
 license="Apache-2.0"
 makedepends="go nodejs npm"
+# openssh-keygen (real, separate Alpine subpackage - confirmed via a
+# live `apk search openssh`, NOT bundled into openssh-client) -
+# isms.initd's own start_pre() shells out to `ssh-keygen -t ed25519` to
+# generate ISMS_SIGNING_KEY on first start (see that file's own
+# comment) - a real runtime dependency, not something to assume is
+# already on the box.
+depends="openssh-keygen"
 install="$pkgname.pre-install"
 options="net" # go mod + npm ci both need network at build time
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/isms/archive/refs/tags/v$pkgver.tar.gz
 	isms.initd
 	isms.confd
 	isms.server.env
+	isms.profile.d
 	"
 builddir="$srcdir/$pkgname-$pkgver"
 
 # CGO_ENABLED=0 pure Go binary using go-git internally (no external `git`
-# binary needed at runtime, confirmed from cmd/isms/main.go's imports) - no
-# runtime depends= at all. isms only ever talks to Postgres over the network
-# (DATABASE_URL), it doesn't need a `psql` binary on the box to do that; add
+# binary needed at runtime, confirmed from cmd/isms/main.go's imports) -
+# isms itself only ever talks to Postgres over the network (DATABASE_URL),
+# it doesn't need a `psql` binary on the box to do that; add
 # postgresql-client yourself if you actually want an interactive client.
+# openssh-keygen (above) is this package's own real runtime depends= -
+# needed by isms.initd, not by the isms binary itself.
 
 build() {
 	# Mirrors the upstream Justfile's `build-go` recipe exactly (sync
@@ -66,11 +102,18 @@ package() {
 	# since package()-time install can't chown to a system user that
 	# doesn't exist yet in the build sandbox.
 	install -Dm600 "$srcdir"/isms.server.env "$pkgdir"/etc/isms/server.env
+	# /etc/profile.d/*.sh - standard Alpine convention, sourced by
+	# /etc/profile for every login shell. Exports ISMS_SERVER_ENV so an
+	# admin command run BY HAND (isms server migrate, ...) finds
+	# server.env the same way the daemon itself already does - see
+	# isms.profile.d's own header comment for the real gap this closes.
+	install -Dm644 "$srcdir"/isms.profile.d "$pkgdir"/etc/profile.d/isms.sh
 }
 
 sha512sums="
 c86b44b21eba805bcc8fa230259c8142a39a440838a4feef5db4420e2f45ed1f82a68ce557d3f59c94cfe998b58834faa87e9d33b229028247531b1340891a95  isms-0.8.0.tar.gz
-e94d36a6c06a1bc3a377ae2c06e52caeee8a118e6b76397b0d493e0bf67e923a02fc6402edaee4a0118f99ca583870dd54fc3c0bfe87fe4d8cd9e08e58e7f128  isms.initd
+35e92ca5ad5f4cfd3830077df2fb606a00cfa3051b19bdeef1b6a5770392b0213478df8b0aa858ee37853d51a4450872a5004dcd33fdd6b11b055b150974a728  isms.initd
 fc8e129f5ef8cc26f5dfabd78ef1426861c1290e8f9248301cba4b18153f9fa6b1011024a9f74b5e4522172c3a81d9070d1ba096fa362c14f3ba811402bfc386  isms.confd
-ec7eb1f6d2298d729bdf8e989f6e48925d0a19278a5608546a56adce4c0328477b9384eff10d55f8abb9325f39bedf5939d44847b8c7c8d7fa8eb40f3cbfbc19  isms.server.env
+949f9b110856dfd3fd498029dd4608e739beb2aa52f27ab704464dff15a400149fa901407b2019fa5bca655f2714079264738b4bb726885a863815489af4af69  isms.server.env
+170689cc57d5f74326fb780b20c49c1fcc8172ebc45d8e0b8a51630b2d950aeb74b690f556a549f70a5e1c521aa8860e1070f52f3b7900af91689c583fc3777f  isms.profile.d
 "
