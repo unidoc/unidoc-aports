@@ -34,9 +34,60 @@
 #     the shipped CHANGEME placeholder, since that part IS a human
 #     decision. New openssh-keygen depends= for this (confirmed as a
 #     real, separate Alpine subpackage via a live `apk search openssh`).
+#
+# r3: independent Fable-model audit (fleet-scale review: hundreds of
+# Incus instances, apk-upgraded together) of this package against the
+# real isms source and the real isms-templates repo. Headline finding:
+# the one existential fleet risk - `apk upgrade` clobbering a live,
+# secret-bearing /etc/isms/server.env - does NOT happen, confirmed
+# directly against apk-tools' own source (apk_db_migrate_files,
+# database.c): a locally-modified file under a protected path ("+etc"
+# is a built-in default) is never overwritten, the new package version
+# lands as <path>.apk-new instead. Real gaps the audit DID find, all
+# fixed here:
+#   - CRITICAL: ISMS_BASE_URL was listed as optional (under "Common"),
+#     but server.go log.Fatal's at startup without it (or
+#     ISMS_CORS_ORIGIN) outside ISMS_DEV_MODE=1 - moved to Required.
+#   - isms.initd used command_background (bare start-stop-daemon
+#     fork-and-forget) - any post-fork crash (exactly what the
+#     ISMS_BASE_URL gap above would cause) was invisible: OpenRC reports
+#     "started", nothing ever respawns it. Switched to supervise-daemon
+#     (real supervision, respawn_delay=5/respawn_max=0 - never
+#     permanently gives up, confirmed against supervise-daemon.c's own
+#     "respawn_max > 0" gate).
+#   - A locally-modified server.env/conf.d never picks up a NEWER
+#     package version's added config (that's the flip side of the
+#     apk-upgrade protection above) - isms.initd's start_pre() now warns
+#     loudly on every start if a <file>.apk-new sibling exists, instead
+#     of leaving that silent.
+#   - No log rotation for /var/log/isms/isms.log (Echo logs every HTTP
+#     request) - unbounded growth across long-lived instances. New
+#     isms.logrotate + a real logrotate depends=, copytruncate (isms has
+#     no SIGHUP-reopen handling to support anything else).
+#   - _server_env_get only matched a bare "KEY=", not "KEY = " - a
+#     hand-edited line with spaces around "=" would look empty to this
+#     script (but not to isms's own loadEnvFile, which tolerates them)
+#     and get a second, silently-winning generated value appended.
+#     Tightened to match loadEnvFile's own tolerance.
+#   - umask 077 added to start_pre() - the ISMS_SECRET/ISMS_SIGNING_KEY
+#     generation's own sed-to-tempfile-then-mv step could otherwise
+#     briefly leave a copy of the file (secrets included) at the
+#     default umask before the final checkpath narrows it to 0600.
+#   - ISMS_TEMPLATE_PATH was documented as if in the startup-abort
+#     Required section, but it's only read lazily (fails at
+#     template-listing time, not startup) - re-sectioned for accuracy.
+#   - A CHANGEME ISMS_SIGNING_EMAIL set AFTER the signing key already
+#     exists now gets a start-time warning (the original CHANGEME gate
+#     only ran at key-generation time).
+#   - isms.profile.d only reaches login shells - `incus exec <c> --
+#     isms server migrate` (the natural fleet-tooling execution path)
+#     is non-login and won't source it, reproducing the exact gap r2
+#     fixed for other interactive contexts. Documented with the
+#     `--env` workaround; no general fix exists (incus exec has no
+#     login/profile sequence to hook at all).
 pkgname=isms
 pkgver=0.8.0
-pkgrel=2
+pkgrel=3
 pkgdesc="Open-source ISMS platform - git-native documents, PostgreSQL collaboration, single binary"
 url="https://github.com/unidoc/isms"
 arch="all"
@@ -48,7 +99,12 @@ makedepends="go nodejs npm"
 # generate ISMS_SIGNING_KEY on first start (see that file's own
 # comment) - a real runtime dependency, not something to assume is
 # already on the box.
-depends="openssh-keygen"
+#
+# logrotate - isms.logrotate is inert without the real logrotate binary
+# and its own cron job actually installed; shipping the config file
+# alone would only look like unbounded /var/log/isms/isms.log growth
+# was fixed, not actually fix it (see r3's own comment above).
+depends="openssh-keygen logrotate"
 install="$pkgname.pre-install"
 options="net" # go mod + npm ci both need network at build time
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/isms/archive/refs/tags/v$pkgver.tar.gz
@@ -56,6 +112,7 @@ source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/isms/archive/refs/tag
 	isms.confd
 	isms.server.env
 	isms.profile.d
+	isms.logrotate
 	"
 builddir="$srcdir/$pkgname-$pkgver"
 
@@ -108,12 +165,14 @@ package() {
 	# server.env the same way the daemon itself already does - see
 	# isms.profile.d's own header comment for the real gap this closes.
 	install -Dm644 "$srcdir"/isms.profile.d "$pkgdir"/etc/profile.d/isms.sh
+	install -Dm644 "$srcdir"/isms.logrotate "$pkgdir"/etc/logrotate.d/isms
 }
 
 sha512sums="
 c86b44b21eba805bcc8fa230259c8142a39a440838a4feef5db4420e2f45ed1f82a68ce557d3f59c94cfe998b58834faa87e9d33b229028247531b1340891a95  isms-0.8.0.tar.gz
-35e92ca5ad5f4cfd3830077df2fb606a00cfa3051b19bdeef1b6a5770392b0213478df8b0aa858ee37853d51a4450872a5004dcd33fdd6b11b055b150974a728  isms.initd
+6421f5febb612e3055f2073b023e7f07b602ac55ec308b8261b4c6783c81f748a1f016393fb7e05196152e1e05e8f3caeb44a3144bca9428160595b0c329c2ee  isms.initd
 fc8e129f5ef8cc26f5dfabd78ef1426861c1290e8f9248301cba4b18153f9fa6b1011024a9f74b5e4522172c3a81d9070d1ba096fa362c14f3ba811402bfc386  isms.confd
-949f9b110856dfd3fd498029dd4608e739beb2aa52f27ab704464dff15a400149fa901407b2019fa5bca655f2714079264738b4bb726885a863815489af4af69  isms.server.env
-170689cc57d5f74326fb780b20c49c1fcc8172ebc45d8e0b8a51630b2d950aeb74b690f556a549f70a5e1c521aa8860e1070f52f3b7900af91689c583fc3777f  isms.profile.d
+79b16c2623f203f3a0271241a266cff1ac21009d895275acbff0fb4ec67c5ef0039b24e15a94bdca7a11b72efef5f4f0960bc0c2b503c5de335823de73319adf  isms.server.env
+ac95bd5f99154e0ee5812b92b0d66a2e1314bb06f2ad1f17124db90d5c3bc328e65c6ee6733a47daa766290dbf849c77bc0a70713a1d51888df0f3a4100632be  isms.profile.d
+ad6f2fcc1b288748714b8f55440907acb8587f492a759f512eeaaaaa6426ace0c4a3ec0e7e6d31dae165180d9d6d4eb4e9d2cf6232fb8897db4d81545be4a7f1  isms.logrotate
 "

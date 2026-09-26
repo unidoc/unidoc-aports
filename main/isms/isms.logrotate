@@ -1,0 +1,17 @@
+/var/log/isms/isms.log {
+	weekly
+	rotate 8
+	missingok
+	notifempty
+	compress
+	delaycompress
+	# copytruncate, not the usual create+signal: isms.initd's own
+	# supervise-daemon holds output_log/error_log open for the life of
+	# the process (see that file's own comment), and isms itself has no
+	# SIGHUP-reopen-log-file handling (confirmed - no signal.Notify for
+	# SIGHUP anywhere in cmd/isms) to tell it to switch to a freshly
+	# created file. copytruncate avoids needing either: it copies the
+	# current content out, then truncates the SAME open file in place,
+	# so the fd the running daemon already holds stays valid.
+	copytruncate
+}
