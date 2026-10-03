@@ -1,6 +1,6 @@
 # Maintainer: UniDoc <ahall@unidoc.io>
 pkgname=unidoc-ndppd
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=0
 pkgdesc="IPv6 NDP proxy daemon - UniDoc fork of ndppd"
 url="https://github.com/unidoc/unidoc-ndppd"
@@ -34,7 +34,7 @@ package() {
 }
 
 sha512sums="
-95529bb04e9d4e07fe3f90a8e90f761789dcd054f9bbf3c2c906bac4773af3d9cd78a0ae3d6e52bb2fdb259cc39e4c6ec4b37c03ff881cff016e84c707863478  unidoc-ndppd-1.0.0.tar.gz
+9b831ceb69ef0e7a594cbe589ee28dc423f620b062bb94995cfff32c45a7063350a6fb1f3362107ad3acb24d7386f0166905f9ce805f9999e91c3643fced01d5  unidoc-ndppd-1.1.0.tar.gz
 d746c004cbf366d1e3d64c6d7a5909f83e632d47fe73b9205898e2439d79192606ced2d6d785ee451104b79efbd866bdd1349e68f2befdb4b432370e2107ebe1  unidoc-ndppd.initd
 48bee4ae1e99a6a12ffc71fe7149bd53ca02f7d2a7d4408b0727e6ad72e510380d1361e0424cdfc27a70860b6fe585d6b6b600bb0e6820073262e6dec0a2b697  unidoc-ndppd.confd
 "
