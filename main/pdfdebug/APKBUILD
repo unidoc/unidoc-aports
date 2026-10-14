@@ -21,6 +21,13 @@ options="net" # go mod needs network at build time
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/pdfdebug/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
+# pdfdebug's go.mod wants a newer Go than Alpine 3.24 packages (0.5.0: go>=1.27.0, Alpine has 1.26.8; re-check at
+# each pkgver bump). Alpine's go package defaults GOTOOLCHAIN=local, which refuses that outright; options="net"
+# above permits the fetch and this makes Go fetch the toolchain it asks for (checksum-verified through the Go
+# checksum database). Not hermetic, but there is no other lever until Alpine's go catches up - the same approach as
+# main/unidoc-incus.
+export GOTOOLCHAIN=auto
+
 build() {
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o pdfdebug ./cmd/cli
 }
