@@ -60,6 +60,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A package that builds with go but does not set GOTOOLCHAIN=auto builds today and fails at the first release
+      # that needs a newer Go than Alpine packages (pdfdebug 0.5.0). Cheap, so it runs on every build.
+      - name: Check every Go APKBUILD sets GOTOOLCHAIN=auto
+        run: sh scripts/check-apkbuilds.sh
+
       # deploy-pages (bottom of the publish job) replaces the ENTIRE site on
       # every run - there is no incremental publish. That means "only build
       # what changed" is not just a build-loop optimization: if a package is

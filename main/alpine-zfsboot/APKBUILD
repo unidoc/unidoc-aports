@@ -8,6 +8,13 @@ arch="all"
 license="Apache-2.0"
 makedepends="go"
 options="net" # go mod needs network at build time
+
+# Alpine's go package defaults to GOTOOLCHAIN=local, which refuses a go.mod that asks for a newer Go than Alpine
+# packages (Alpine 3.24 has 1.26.8). GOTOOLCHAIN=auto lets Go fetch the toolchain a release asks for (and changes
+# nothing when the installed Go is new enough); options="net" permits the fetch. Not hermetic, but the fetch is
+# checksum-verified through the Go checksum database. Every package that builds with go sets this
+# (scripts/check-apkbuilds.sh enforces it).
+export GOTOOLCHAIN=auto
 source="$pkgname-$pkgver.tar.gz::https://github.com/unidoc/alpine-zfsboot/archive/refs/tags/v$pkgver.tar.gz"
 builddir="$srcdir/$pkgname-$pkgver"
 
