@@ -1,6 +1,6 @@
 # Maintainer: UniDoc <ahall@unidoc.io>
 pkgname=alpine-zfsboot
-pkgver=0.4.1
+pkgver=0.5.0
 pkgrel=0
 pkgdesc="alpine-zfsboot install-time helper (check/update an installed .EFI build)"
 url="https://github.com/unidoc/alpine-zfsboot"
@@ -45,5 +45,5 @@ package() {
 }
 
 sha512sums="
-fcc3120aeb847c723a803838d6de1812c86fc378d560fd8404f234a1ea469372fde1815362d8e566ace010a25cb7d8cacd413f8aa861fb3a6eb170b69dff3502  alpine-zfsboot-0.4.1.tar.gz
+1c9a7d32aa589ac978459ce994bb95c7bd9dc0902e5fb93ae01549000df8253f4e9036e40d233da83fcb1cd33a77427c5c91f5915a14ea6a4afb903577242be8  alpine-zfsboot-0.5.0.tar.gz
 "
