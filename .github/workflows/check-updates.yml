@@ -74,14 +74,19 @@ jobs:
           apkbuild="main/$PKG/APKBUILD"
           current="$(sed -n 's/^pkgver=//p' "$apkbuild")"
 
-          # /releases/latest (not /tags) on purpose - it's GitHub's own
-          # "which release is current" answer (excludes drafts/prereleases
-          # by definition), not a raw tag list whose ordering isn't
-          # guaranteed to be version-sorted.
-          latest="$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' | sed 's/^v//')"
+          # Highest published release by version, not /releases/latest:
+          # that one is "most recently published", and projects that
+          # maintain an LTS branch alongside feature releases (incus:
+          # 7.0.x LTS vs 7.5.x) publish LTS point releases after newer
+          # feature releases, so "latest" can be older than what we have.
+          # Drafts and prereleases are excluded.
+          latest="$(gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            | sed 's/^v//' | sort -V | tail -n 1)"
 
-          if [ "$current" = "$latest" ]; then
-            echo "$PKG: up to date ($current)"
+          # Only ever bump forward - never open a PR that downgrades.
+          if [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$current" ]; then
+            echo "$PKG: up to date ($current, highest upstream release $latest)"
             exit 0
           fi
           echo "$PKG: $current -> $latest"
