@@ -1,6 +1,6 @@
 # Maintainer: UniDoc <ahall@unidoc.io>
 pkgname=unisupply
-pkgver=0.6.0
+pkgver=0.7.0
 pkgrel=0
 pkgdesc="Go supply chain security analysis - vulnerabilities, weak maintainers, typosquatting, CI/CD risks"
 url="https://github.com/unidoc/unisupply"
@@ -38,5 +38,5 @@ package() {
 }
 
 sha512sums="
-edf39e07a9c10d3c1559f416a8a2f6d3e6390869b82c651598e043a51f94fbcc10372d260e7160efbca7660b9dc99f8db800cccd2747f9b176f4c6180df7a097  unisupply-0.6.0.tar.gz
+0b18ebd900ed0983a7336f1a1503bc8017f4db98306d568b18858fa1e5b5adf21565d624bd636d7959cc0f79ea82957181ad07e93ea334857318d01b3981f45c  unisupply-0.7.0.tar.gz
 "
