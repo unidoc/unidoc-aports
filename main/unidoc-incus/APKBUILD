@@ -39,8 +39,8 @@
 # degraded-but-working race. See incusd.initd's own comment for the full
 # chain.
 pkgname=unidoc-incus
-pkgver=7.5.1
-pkgrel=1
+pkgver=7.6.0
+pkgrel=0
 pkgdesc="Incus container/VM manager - UniDoc build (latest stable, bundled, no LTS pin)"
 url="https://github.com/lxc/incus"
 arch="all"
@@ -212,7 +212,7 @@ agent() {
 # Re-check the static-build patch (cut against 7.0.x LTS) still applies
 # cleanly (`patch -p1 --dry-run`) at each pkgver bump.
 sha512sums="
-1407ea180a47e8f27ef3de4092b65acfbb2d4bdf276848d5a2b5e24b2f985db2e826bffdbfec5b306ad2f9c03d93ed53139780b7ad9b60dfc93c7bf229e264c5  incus-7.5.1.tar.gz
+efadf26761e58eebff4cd0075e52d43479cff35491c2c0876cebec2099d7edf109a0554d26ac3e50de2b14f5b0535eba64721ca33266c1a3a535e402fbfb6e0e  incus-7.6.0.tar.gz
 052c3f1b19e2e125237a34ee3d8f2efeb8a6821f93708d323c0ec487850fc1940844d5a8216981ee06dc756d033c23d0f8948e96de3c431af83fd08bd1f068b5  incusd.confd
 96726e912556bcf19efe30689912f982d20ec422ec0d972d70481a254bf2880c0a686039db5741e52c15a7012fb1cf0b16b972fa10c959ee5a33dbf7eeb5a718  incusd.initd
 a495ca525f2d98771e076026e9046f5d120aa929ed114cae330829ad698c4dbc5d80ed815328f3558584520f6c8d44d7b037721eb977b70f0ad288f6ad19e9cf  incus-agent.initd
