@@ -86,7 +86,7 @@
 #     `--env` workaround; no general fix exists (incus exec has no
 #     login/profile sequence to hook at all).
 pkgname=isms
-pkgver=0.8.1
+pkgver=0.9.0
 pkgrel=0
 pkgdesc="Open-source ISMS platform - git-native documents, PostgreSQL collaboration, single binary"
 url="https://github.com/unidoc/isms"
@@ -176,7 +176,7 @@ package() {
 }
 
 sha512sums="
-7dcd509816dc557fa91ac56b3b117ccd265a2fe1b1ac90ec7d8f4c3e9b474e7340be74ce0a9e713e73110b88c3567054f247905ae32d05f06e41ba376a388b87  isms-0.8.1.tar.gz
+c358a06e886dda53aa0269ef763832747264472a3ed76038d90aea7829fa772097d42feccfda36a9af3c7ecbd10bfa7da6eba0f4a040be7e464854b71916432a  isms-0.9.0.tar.gz
 6421f5febb612e3055f2073b023e7f07b602ac55ec308b8261b4c6783c81f748a1f016393fb7e05196152e1e05e8f3caeb44a3144bca9428160595b0c329c2ee  isms.initd
 fc8e129f5ef8cc26f5dfabd78ef1426861c1290e8f9248301cba4b18153f9fa6b1011024a9f74b5e4522172c3a81d9070d1ba096fa362c14f3ba811402bfc386  isms.confd
 79b16c2623f203f3a0271241a266cff1ac21009d895275acbff0fb4ec67c5ef0039b24e15a94bdca7a11b72efef5f4f0960bc0c2b503c5de335823de73319adf  isms.server.env
