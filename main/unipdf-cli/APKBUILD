@@ -7,7 +7,7 @@
 # deliberately not an OSI identifier. Don't copy this pattern onto the
 # open-source packages in this repo.
 pkgname=unipdf-cli
-pkgver=0.14.0
+pkgver=0.15.0
 pkgrel=0
 pkgdesc="CLI for PDF processing using unipdf (commercial - requires a license code)"
 url="https://github.com/unidoc/unipdf-cli"
@@ -36,5 +36,5 @@ package() {
 }
 
 sha512sums="
-0e72291a2f65eb1efc24b39756665c8d5a9930c070cc52bef248d5be35f7df97d08ccd303082841c2db1edf059765cfa84d1439e9ba03afbccfba38e7d51dad5  unipdf-cli-0.14.0.tar.gz
+50bb859394032f8ea38a9391c2685de00180f14bc3f375f021be10a176822c42014f079113e0ab7639401f2b5be108b7f0be3720f58d7baf9c48074d8d07152a  unipdf-cli-0.15.0.tar.gz
 "
