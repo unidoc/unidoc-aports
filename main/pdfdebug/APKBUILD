@@ -10,7 +10,7 @@
 # actual source myself, not just trusted a docs claim) - a one-shot stdout
 # PDF inspection tool (dump/validate/diff subcommands), nothing else.
 pkgname=pdfdebug
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=0
 pkgdesc="UniDoc PDF Debugger - CLI PDF inspection tool (dump/validate/diff)"
 url="https://github.com/unidoc/pdfdebug"
@@ -37,5 +37,5 @@ package() {
 }
 
 sha512sums="
-73e74334b92cdae93d3f48aed2b6da7047143afe2ed910bb9187d5f0a9f313e931f7966dd0065005444dd68a2c1819af6ba4a6f3386706409ec33e7cde983a38  pdfdebug-0.5.0.tar.gz
+0b8cd57257bf9adcb4b5c1f2154e502f10d3161d3921e7a99642a5590deee48ca6bec24ad86f0699f11ac21a049b7c3485aae8c92b66b117cb6db8d88e9d3c56  pdfdebug-0.6.0.tar.gz
 "
